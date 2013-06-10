@@ -42,6 +42,7 @@ import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.NumericDocValues;
 import org.apache.lucene.index.SegmentReader;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.index.Terms;
 import org.apache.lucene.search.similarities.DefaultSimilarity;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.Directory;
@@ -153,7 +154,7 @@ public class NativeSearch {
     try {
       return _search(searcher, query, topN);
     } catch (IllegalArgumentException iae) {
-      System.out.println("NATIVE: skip: " + iae);
+      //System.out.println("NATIVE: skip: " + iae);
       return searcher.search(query, null, topN);
     }
   }
@@ -204,13 +205,18 @@ public class NativeSearch {
         throw new IllegalArgumentException("leaves must be SegmentReaders; got: " + ctx.reader());
       }
       SegmentReader reader = (SegmentReader) ctx.reader();
-      Directory dir = unwrapDirectory(reader.directory());
-      if (!(reader.directory() instanceof NativeMMapDirectory)) {
+      Directory dir = unwrap(reader.directory());
+      if (!(dir instanceof NativeMMapDirectory)) {
         throw new IllegalArgumentException("directory must be a NativeMMapDirectory; got: " + reader.directory());
       }
       Codec codec = reader.getSegmentInfo().info.getCodec();
 
       FieldInfo fieldInfo = reader.getFieldInfos().fieldInfo(field);
+      if (fieldInfo == null) {
+        // Field never appeared in this segment so no docs
+        // will match:
+        continue;
+      }
       if (fieldInfo.getIndexOptions() == FieldInfo.IndexOptions.DOCS_ONLY) {
         throw new IllegalArgumentException("field must be indexed with freqs; got: " + fieldInfo.getIndexOptions());
       }
@@ -218,15 +224,6 @@ public class NativeSearch {
       LiveDocsFormat ldf = codec.liveDocsFormat();
       if (!(ldf instanceof Lucene40LiveDocsFormat)) {
         throw new IllegalArgumentException("LiveDocsFormat must be Lucene40LiveDocsFormat; got: " + ldf);
-      }
-
-      PostingsFormat pf = codec.postingsFormat();
-      if (pf instanceof PerFieldPostingsFormat) {
-        pf = ((PerFieldPostingsFormat) pf).getPostingsFormatForField(field);
-      }
-
-      if (!(pf instanceof Lucene41PostingsFormat)) {
-        throw new IllegalArgumentException("PostingsFormat for field=" + field + " must be Lucene41PostingsFormat; got: " + pf);
       }
 
       NormsFormat nf = codec.normsFormat();
@@ -261,7 +258,11 @@ public class NativeSearch {
         int singletonDocID;
 
         long address;
-        DocsEnum docsEnum = getDocsEnum(scorer);
+        DocsEnum docsEnum = unwrap(getDocsEnum(scorer));
+        if (docsEnum.getClass().getName().indexOf("Lucene41PostingsReader") == -1) {
+          throw new IllegalArgumentException("must use Lucene41PostingsFormat; got " + docsEnum.getClass().getName());
+        }
+
         int docFreq = getDocFreq(docsEnum);
         long docTermStartFP = getDocTermStartFP(docsEnum);
           
@@ -380,12 +381,18 @@ public class NativeSearch {
         throw new IllegalArgumentException("leaves must be SegmentReaders; got: " + ctx.reader());
       }
       SegmentReader reader = (SegmentReader) ctx.reader();
-      if (!(reader.directory() instanceof NativeMMapDirectory)) {
+      Directory dir = unwrap(reader.directory());
+      if (!(dir instanceof NativeMMapDirectory)) {
         throw new IllegalArgumentException("directory must be a NativeMMapDirectory; got: " + reader.directory());
       }
       Codec codec = reader.getSegmentInfo().info.getCodec();
 
       FieldInfo fieldInfo = reader.getFieldInfos().fieldInfo(field);
+      if (fieldInfo == null) {
+        // Field never appeared in this segment so no docs
+        // will match:
+        continue;
+      }
       if (fieldInfo.getIndexOptions() == FieldInfo.IndexOptions.DOCS_ONLY) {
         throw new IllegalArgumentException("field must be indexed with freqs; got: " + fieldInfo.getIndexOptions());
       }
@@ -393,15 +400,6 @@ public class NativeSearch {
       LiveDocsFormat ldf = codec.liveDocsFormat();
       if (!(ldf instanceof Lucene40LiveDocsFormat)) {
         throw new IllegalArgumentException("LiveDocsFormat must be Lucene40LiveDocsFormat; got: " + ldf);
-      }
-
-      PostingsFormat pf = codec.postingsFormat();
-      if (pf instanceof PerFieldPostingsFormat) {
-        pf = ((PerFieldPostingsFormat) pf).getPostingsFormatForField(field);
-      }
-
-      if (!(pf instanceof Lucene41PostingsFormat)) {
-        throw new IllegalArgumentException("PostingsFormat for field=" + field + " must be Lucene41PostingsFormat; got: " + pf);
       }
 
       NormsFormat nf = codec.normsFormat();
@@ -435,15 +433,15 @@ public class NativeSearch {
 
       if (!scorers.isEmpty()) {
 
-        float[] coordFactors = new float[scorers.size()+1];
+        float[] coordFactors = new float[terms.length+1];
         for(int i=0;i<coordFactors.length;i++) {
           float f;
           if (coordDisabled) {
             f = 1.0f;
-          } else if (scorers.size() == 1) {
+          } else if (terms.length == 1) {
             f = 1.0f;
           } else {
-            f = sim.coord(i, scorers.size());
+            f = sim.coord(i, terms.length);
           }
           coordFactors[i] = f;
         }
@@ -457,7 +455,11 @@ public class NativeSearch {
         for(int i=0;i<scorers.size();i++) {
           Scorer scorer = scorers.get(i);
           termWeights[i] = getTermWeight(scorer);
-          DocsEnum docsEnum = getDocsEnum(scorer);
+          DocsEnum docsEnum = unwrap(getDocsEnum(scorer));
+          if (docsEnum.getClass().getName().indexOf("Lucene41PostingsReader") == -1) {
+            throw new IllegalArgumentException("must use Lucene41PostingsFormat; got " + docsEnum.getClass().getName());
+          }
+
           docFreqs[i] = getDocFreq(docsEnum);
           docTermStartFPs[i] = getDocTermStartFP(docsEnum);
           
@@ -635,27 +637,56 @@ public class NativeSearch {
     topScores[i] = savScore;
   }
 
-  // Only applies when running Lucene's tests:
-  private static Directory unwrapDirectory(Directory dir) {
+  // Used only when running Lucene tests:
+  private static IndexInput unwrap(IndexInput in) {
     try {
-      while (true) {
-        System.out.println("unwrap: dir=" + dir);
-        String className = dir.getClass().getSimpleName();
-        if (className.equals("MockDirectoryWrapper") ||
-            className.equals("BaseDirectoryWrapper")) {
-          Class<?> x = Class.forName("org.apache.lucene.store.BaseDirectoryWrapper");
-          Field f = x.getDeclaredField("delegate");
-          f.setAccessible(true);
-          dir = (Directory) f.get(dir);
-        } else {
-          break;
-        }
+      if (in.getClass().getSimpleName().equals("MockIndexInputWrapper")) {
+        final Class<?> x = Class.forName("org.apache.lucene.store.MockIndexInputWrapper");
+        Field f = x.getDeclaredField("delegate");
+        f.setAccessible(true);
+        return (IndexInput) f.get(in);
+      } else {
+        return in;
+      }
+    } catch (Exception e) {
+      throw new RuntimeException("failed to unwrap IndexInput", e);
+    }
+  }
+
+  // Used only when running Lucene tests:
+  private static Directory unwrap(Directory dir) {
+    try {
+      //System.out.println("unwrap: dir=" + dir);
+      String className = dir.getClass().getSimpleName();
+      if (className.equals("MockDirectoryWrapper") ||
+          className.equals("BaseDirectoryWrapper")) {
+        Class<?> x = Class.forName("org.apache.lucene.store.BaseDirectoryWrapper");
+        Field f = x.getDeclaredField("delegate");
+        f.setAccessible(true);
+        return (Directory) f.get(dir);
+      } else {
+        return dir;
       }
     } catch (Exception e) {
       throw new IllegalStateException("failed to unwrapDirectory", e);
     }
+  }
 
-    return dir;
+  // Used only when running Lucene tests:
+  private static DocsEnum unwrap(DocsEnum docsEnum) {
+    try {
+      String className = docsEnum.getClass().getSimpleName();
+      if (className.equals("AssertingDocsEnum")) {
+        Class<?> x = Class.forName("org.apache.lucene.index.FilterAtomicReader$FilterDocsEnum");
+        Field f = x.getDeclaredField("in");
+        f.setAccessible(true);
+        return (DocsEnum) f.get(docsEnum);
+      } else {
+        return docsEnum;
+      }
+    } catch (Exception e) {
+      throw new IllegalStateException("failed to unwrap DocsEnum", e);
+    }
   }
 
   // nocommit we can move most of the reflection lookups to
@@ -689,7 +720,9 @@ public class NativeSearch {
       Field f = x.getDeclaredField("docScorer");
       f.setAccessible(true);
       Object o = f.get(scorer);
-      Class<?> y = Class.forName("org.apache.lucene.search.similarities.TFIDFSimilarity$TFIDFSimScorer");
+      // 4.4:
+      //Class<?> y = Class.forName("org.apache.lucene.search.similarities.TFIDFSimilarity$TFIDFSimScorer");
+      Class<?> y = Class.forName("org.apache.lucene.search.similarities.TFIDFSimilarity$ExactTFIDFDocScorer");
       Field weightsField = y.getDeclaredField("weightValue");
       weightsField.setAccessible(true);
       return weightsField.getFloat(o);
@@ -736,7 +769,7 @@ public class NativeSearch {
       final Class<?> x = Class.forName("org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum");
       final Field f = x.getDeclaredField("startDocIn");
       f.setAccessible(true);
-      return (IndexInput) f.get(docsEnum);
+      return unwrap((IndexInput) f.get(docsEnum));
     } catch (Exception e) {
       throw new IllegalStateException("failed to access docFreq via reflection", e);
     }
