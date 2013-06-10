@@ -1,5 +1,8 @@
-About lucene-c-boost
+lucene-boost
 ==============
+
+About
+-----
 <p>
 Optimized implementations of certain [Apache Lucene](http://lucene.apache.org) queries in C++ (via JNI) for up to 2X - 3.5X speedup:
 
@@ -15,11 +18,13 @@ Optimized implementations of certain [Apache Lucene](http://lucene.apache.org) q
 
 The code is fully decoupled from Lucene: it uses Java's reflection APIs to grab the necessary bits for each query.
 
+This is NOT a port of Apache Lucene to C++!  Rather, it implements hardcoded C++ code to optimize certain queries.
+
 This is a spinoff from [LUCENE-5049](https://issues.apache.org/jira/browse/LUCENE-5049).
 
 <br>
 Usage
-==
+----
 <p>
 It's trivial to use; the only API is a public static method:
 
@@ -29,14 +34,14 @@ If the provided query matches then the optimized C++ code is used. Otherwise the
 
 <br>
 Installation
-==
+-----
 <p>
 TODO: give actual commands here
 Compile the native code to .so/.dll and install on your dynamica library path.  Compile the Java sources and install on your CLASSPATH.
 
 <br>
 Limitations
-===============
+-----
 <br>
 
   * Only tested on Linux / x86 CPU so far
@@ -48,6 +53,5 @@ Limitations
 
 <br>
 Warning
-==
-<br>
-Whenever native code is used, if there are bugs, or API mis-use (such as closing a searcher while threads are still searcing against it), then the JVM will hit a SEGV and the OS will kill it.  You have been warned!
+---
+Whenever native code is used from Java, if there are bugs, or API mis-use (such as closing a searcher while threads are still searcing against it), then the JVM will hit a SEGV and the OS will kill it.  You have been warned!
