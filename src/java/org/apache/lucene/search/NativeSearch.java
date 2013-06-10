@@ -637,12 +637,12 @@ public class NativeSearch {
     topScores[i] = savScore;
   }
 
-  // Used only when running Lucene tests:
+  // Needed only when running Lucene tests:
   private static IndexInput unwrap(IndexInput in) {
     try {
       String className = in.getClass().getSimpleName();
       if (className.equals("MockIndexInputWrapper") ||
-          className.equals("SlowClosingIndexInputWrapper")) {
+          className.equals("SlowClosingMockIndexInputWrapper")) {
         final Class<?> x = Class.forName("org.apache.lucene.store.MockIndexInputWrapper");
         Field f = x.getDeclaredField("delegate");
         f.setAccessible(true);
@@ -655,7 +655,7 @@ public class NativeSearch {
     }
   }
 
-  // Used only when running Lucene tests:
+  // Needed only when running Lucene tests:
   private static Directory unwrap(Directory dir) {
     try {
       //System.out.println("unwrap: dir=" + dir);
@@ -674,7 +674,7 @@ public class NativeSearch {
     }
   }
 
-  // Used only when running Lucene tests:
+  // Needed only when running Lucene tests:
   private static DocsEnum unwrap(DocsEnum docsEnum) {
     try {
       String className = docsEnum.getClass().getSimpleName();

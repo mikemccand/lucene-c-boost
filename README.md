@@ -51,4 +51,4 @@ Run python3 build.py then put dist/*.so on your dynamic library path, and dist/l
 
 <br>
 #WARNING
-Whenever native code is used from Java, if there are bugs, or API mis-use (such as closing a searcher while threads are still searcing against it), then the JVM will hit a SEGV and the OS will kill it.  You have been warned!
+Whenever native code is used from Java, if there are bugs (likely!), or API mis-use (such as closing a searcher while threads are still searcing against it), then the JVM will likely hit a SEGV and the OS will kill it.  You have been warned!
