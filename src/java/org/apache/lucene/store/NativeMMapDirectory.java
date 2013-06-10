@@ -18,6 +18,7 @@ package org.apache.lucene.store;
  */
 
 import java.io.File;
+import java.io.EOFException;
 import java.io.RandomAccessFile;
 import java.io.FileDescriptor;
 import java.io.IOException;
@@ -60,8 +61,7 @@ public class NativeMMapDirectory extends FSDirectory {
       @Override
       public IndexInput openSlice(String sliceDescription, long offset, long length) throws IOException {
         ensureOpen();
-        //System.out.println("openSlice " + sliceDescription + " offset=" + offset);
-        return new NativeMMapIndexInput(sliceDescription, full.address + offset, length, full.address + offset);
+        return new NativeMMapIndexInput(full.toString() + "[slice=" + sliceDescription + "]", full.address + offset, length, full.address + offset);
       }
       
       @Override
@@ -113,9 +113,14 @@ public class NativeMMapDirectory extends FSDirectory {
       super(resourceDescription);
       this.raf = raf;
       length = raf.length();
-      int fd = getFileDes(raf.getFD());
-      address = map(fd, length);
-      //System.out.println("map: " + resourceDescription + " fd=" + fd + " -> address=" + address + " length=" + length);
+      if (length == 0) {
+        // mmap gets angry if you map 0 length file:
+        address = 0;
+      } else {
+        int fd = getFileDes(raf.getFD());
+        address = map(fd, length);
+        //System.out.println("map: " + resourceDescription + " fd=" + fd + " -> address=" + address + " length=" + length);
+      }
       pos = address;
     }
 
@@ -152,12 +157,20 @@ public class NativeMMapDirectory extends FSDirectory {
     }
 
     @Override
-    public byte readByte() {
+    public byte readByte() throws IOException {
+      // Necessary for reading segments_N while IW is committing:
+      if (pos >= address + length) {
+        throw new EOFException();
+      }
       return unsafe.getByte(pos++);
     }
 
     @Override
-    public void readBytes(byte[] b, int offset, int len) {
+    public void readBytes(byte[] b, int offset, int len) throws IOException {
+      // Necessary for reading segments_N while IW is committing:
+      if (pos + len > address + length) {
+        throw new EOFException();
+      }
       unsafe.copyMemory(null, pos, b, arrayBaseOffset + offset, len);
       pos += len;
     }

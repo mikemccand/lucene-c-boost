@@ -31,8 +31,10 @@ Java_org_apache_lucene_store_NativeMMapDirectory_map(JNIEnv *env,
                                                      jint fd, jlong fileLength) {
   long address = (long) mmap(0, fileLength, PROT_READ, MAP_SHARED, fd, 0);
   if (address == -1) {
-    // nocommit throw exc
-    printf("errno=%d\n", errno);fflush(stdout);
+    jclass exClass = env->FindClass("java/io/IOException");
+    char buf[64];
+    sprintf(buf, "errno=%d", errno);
+    return env->ThrowNew(exClass, buf);
   }
   return address;
 }

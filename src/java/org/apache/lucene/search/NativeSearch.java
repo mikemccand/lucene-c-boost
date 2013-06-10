@@ -640,7 +640,9 @@ public class NativeSearch {
   // Used only when running Lucene tests:
   private static IndexInput unwrap(IndexInput in) {
     try {
-      if (in.getClass().getSimpleName().equals("MockIndexInputWrapper")) {
+      String className = in.getClass().getSimpleName();
+      if (className.equals("MockIndexInputWrapper") ||
+          className.equals("SlowClosingIndexInputWrapper")) {
         final Class<?> x = Class.forName("org.apache.lucene.store.MockIndexInputWrapper");
         Field f = x.getDeclaredField("delegate");
         f.setAccessible(true);

@@ -35,8 +35,7 @@ If the provided query matches then the optimized C++ code is used. Otherwise the
 <br>
 #Installation
 <p>
-TODO: give actual commands here
-Compile the native code to .so/.dll and install on your dynamica library path.  Compile the Java sources and install on your CLASSPATH.
+Run python3 build.py then put dist/*.so on your dynamic library path, and dist/luceneCBoost.jar on your CLASSPATH.
 
 <br>
 #Limitations
@@ -51,5 +50,5 @@ Compile the native code to .so/.dll and install on your dynamica library path.  
   * This code is all very new and likely to have exciting bugs
 
 <br>
-#Warning
+#WARNING
 Whenever native code is used from Java, if there are bugs, or API mis-use (such as closing a searcher while threads are still searcing against it), then the JVM will hit a SEGV and the OS will kill it.  You have been warned!

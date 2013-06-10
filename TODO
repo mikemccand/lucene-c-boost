@@ -2,6 +2,8 @@ post ASL2
 
 how to work across diff't lucene versions!?
 
+make separate NativeMMapII impls for bounds checking (segments_N) and not?
+
 why no tests run BQ native?
 
 really we should do the "checking" for all segs up-front, so we don't e.g. do lots of work on first segments only to discover a bad PF in the last one

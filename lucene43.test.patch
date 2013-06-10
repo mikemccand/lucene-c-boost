@@ -1,3 +1,30 @@
+Index: lucene/test-framework/src/java/org/apache/lucene/util/TestRuleSetupAndRestoreClassEnv.java
+===================================================================
+--- lucene/test-framework/src/java/org/apache/lucene/util/TestRuleSetupAndRestoreClassEnv.java	(revision 1491585)
++++ lucene/test-framework/src/java/org/apache/lucene/util/TestRuleSetupAndRestoreClassEnv.java	(working copy)
+@@ -236,7 +236,8 @@
+     TimeZone randomTimeZone = randomTimeZone(random());
+     timeZone = testTimeZone.equals("random") ? randomTimeZone : TimeZone.getTimeZone(testTimeZone);
+     TimeZone.setDefault(timeZone);
+-    similarity = random().nextBoolean() ? new DefaultSimilarity() : new RandomSimilarityProvider(random());
++    //similarity = random().nextBoolean() ? new DefaultSimilarity() : new RandomSimilarityProvider(random());
++    similarity = new DefaultSimilarity();
+ 
+     // Check codec restrictions once at class level.
+     try {
+Index: lucene/test-framework/src/java/org/apache/lucene/util/_TestUtil.java
+===================================================================
+--- lucene/test-framework/src/java/org/apache/lucene/util/_TestUtil.java	(revision 1491585)
++++ lucene/test-framework/src/java/org/apache/lucene/util/_TestUtil.java	(working copy)
+@@ -851,7 +851,7 @@
+ 
+   public static void assertEquals(TopDocs expected, TopDocs actual) {
+     Assert.assertEquals("wrong total hits", expected.totalHits, actual.totalHits);
+-    Assert.assertEquals("wrong maxScore", expected.getMaxScore(), actual.getMaxScore(), 0.0);
++    Assert.assertEquals("wrong maxScore", expected.getMaxScore(), actual.getMaxScore(), 0.00001);
+     Assert.assertEquals("wrong hit count", expected.scoreDocs.length, actual.scoreDocs.length);
+     for(int hitIDX=0;hitIDX<expected.scoreDocs.length;hitIDX++) {
+       final ScoreDoc expectedSD = expected.scoreDocs[hitIDX];
 Index: lucene/test-framework/src/java/org/apache/lucene/util/LuceneTestCase.java
 ===================================================================
 --- lucene/test-framework/src/java/org/apache/lucene/util/LuceneTestCase.java	(revision 1491585)
@@ -25,20 +52,6 @@ Index: lucene/test-framework/src/java/org/apache/lucene/util/LuceneTestCase.java
        ret.setSimilarity(classEnvRule.similarity);
        return ret;
      }
-Index: lucene/test-framework/src/java/org/apache/lucene/util/TestRuleSetupAndRestoreClassEnv.java
-===================================================================
---- lucene/test-framework/src/java/org/apache/lucene/util/TestRuleSetupAndRestoreClassEnv.java	(revision 1491585)
-+++ lucene/test-framework/src/java/org/apache/lucene/util/TestRuleSetupAndRestoreClassEnv.java	(working copy)
-@@ -236,7 +236,8 @@
-     TimeZone randomTimeZone = randomTimeZone(random());
-     timeZone = testTimeZone.equals("random") ? randomTimeZone : TimeZone.getTimeZone(testTimeZone);
-     TimeZone.setDefault(timeZone);
--    similarity = random().nextBoolean() ? new DefaultSimilarity() : new RandomSimilarityProvider(random());
-+    //similarity = random().nextBoolean() ? new DefaultSimilarity() : new RandomSimilarityProvider(random());
-+    similarity = new DefaultSimilarity();
- 
-     // Check codec restrictions once at class level.
-     try {
 Index: lucene/core/src/java/org/apache/lucene/search/IndexSearcher.java
 ===================================================================
 --- lucene/core/src/java/org/apache/lucene/search/IndexSearcher.java	(revision 1491585)
