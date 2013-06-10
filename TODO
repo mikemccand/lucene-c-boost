@@ -1,0 +1,43 @@
+how to work across diff't lucene versions!?
+
+need NativeMMapDir.createSlicer
+
+add madvise calls for merges to NativeMMapDir?
+
+facets?
+
+filter rewrite method
+
+somehow run all tests where searches go through the booster
+
+factor out common code in NativeSearch.java
+
+why are there score iota diffs!
+
+gen specialized decoders for x86!!!  horrible that I bswap on every load...
+
+don't specialize decode above 24 bits?
+
+write simd?
+
+also BQ and?
+
+also BQ not terms?
+
+allow terms across different fields
+
+allow omit norms?
+
+test CFS and non-CFS
+
+make good random test
+
+should i make just one JNI call, passing all segments down?  or, one JNI call per segment?
+
+should we pre-share global stuff like byte[] norms?
+
+NOTE
+  - no safety!  index corruption / bugs = SEGV
+
+
+

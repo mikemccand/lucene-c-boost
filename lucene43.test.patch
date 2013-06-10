@@ -1,0 +1,31 @@
+Index: lucene/core/src/java/org/apache/lucene/search/IndexSearcher.java
+===================================================================
+--- lucene/core/src/java/org/apache/lucene/search/IndexSearcher.java	(revision 1491585)
++++ lucene/core/src/java/org/apache/lucene/search/IndexSearcher.java	(working copy)
+@@ -266,7 +266,7 @@
+    */
+   public TopDocs search(Query query, int n)
+     throws IOException {
+-    return search(query, null, n);
++    return NativeSearch.search(this, query, n);
+   }
+ 
+ 
+Index: lucene/core/build.xml
+===================================================================
+--- lucene/core/build.xml	(revision 1491585)
++++ lucene/core/build.xml	(working copy)
+@@ -24,9 +24,12 @@
+ 
+   <import file="../common-build.xml"/>
+ 
+-  <path id="classpath"/>
++  <path id="classpath">
++    <pathelement location="/home/mike/src/lucene-c-boost/dist/luceneCBoost.jar"/>
++  </path>
+   
+   <path id="test.classpath">
++    <pathelement location="/home/mike/src/lucene-c-boost/dist/luceneCBoost.jar"/>
+     <pathelement location="${common.dir}/build/test-framework/classes/java"/>
+     <pathelement location="${common.dir}/build/codecs/classes/java"/>
+     <path refid="junit-path"/>

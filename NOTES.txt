@@ -1,0 +1,8 @@
+
+Run python3 build.py and get the bits from dist/*
+
+To test:
+  * Checkout lucene 4.3.x
+  * Apply lucene43.test.patch, but tweak the hard-coded paths
+  * Put the .so files on your LD_LIBRARY_PATH
+  * Run Lucene's tests: ant test -Dtestcase=TestBooleanQuery -Dtests.directory=NativeMMapDirectory -Dtests.similarity=DefaultSimilarity
