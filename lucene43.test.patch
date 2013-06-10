@@ -29,3 +29,30 @@ Index: lucene/core/build.xml
      <pathelement location="${common.dir}/build/test-framework/classes/java"/>
      <pathelement location="${common.dir}/build/codecs/classes/java"/>
      <path refid="junit-path"/>
+Index: lucene/test-framework/src/java/org/apache/lucene/util/LuceneTestCase.java
+===================================================================
+--- lucene/test-framework/src/java/org/apache/lucene/util/LuceneTestCase.java	(revision 1491585)
++++ lucene/test-framework/src/java/org/apache/lucene/util/LuceneTestCase.java	(working copy)
+@@ -1271,7 +1271,8 @@
+           throw new AssertionError(e);
+         }
+       }
+-      IndexSearcher ret = random.nextBoolean() ? new AssertingIndexSearcher(random, r) : new AssertingIndexSearcher(random, r.getContext());
++      //IndexSearcher ret = random.nextBoolean() ? new AssertingIndexSearcher(random, r) : new AssertingIndexSearcher(random, r.getContext());
++      IndexSearcher ret = new IndexSearcher(r);
+       ret.setSimilarity(classEnvRule.similarity);
+       return ret;
+     } else {
+@@ -1298,9 +1299,12 @@
+          }
+        });
+       }
++      /*
+       IndexSearcher ret = random.nextBoolean() 
+           ? new AssertingIndexSearcher(random, r, ex)
+           : new AssertingIndexSearcher(random, r.getContext(), ex);
++      */
++      IndexSearcher ret = new IndexSearcher(r, ex);
+       ret.setSimilarity(classEnvRule.similarity);
+       return ret;
+     }

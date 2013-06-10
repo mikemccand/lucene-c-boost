@@ -44,10 +44,10 @@ import org.apache.lucene.index.SegmentReader;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.similarities.DefaultSimilarity;
 import org.apache.lucene.search.similarities.Similarity;
+import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.NativeMMapDirectory;
-import org.apache.lucene.util.Bits;
-import org.apache.lucene.util.InPlaceMergeSorter;
+import org.apache.lucene.util.*;
 
 /** Uses JNI (C) code to execute a BooleanQuery.  Note that this
  *  class can currently only run in a very precise
@@ -148,12 +148,13 @@ public class NativeSearch {
   public static TopDocs search(IndexSearcher searcher, Query query, int topN) throws IOException {
 
     query = searcher.rewrite(query);
-    //System.out.println("after rewrite: " + query);
+    //System.out.println("NATIVE: after rewrite: " + query);
 
     try {
       return _search(searcher, query, topN);
     } catch (IllegalArgumentException iae) {
-      return searcher.search(query, topN);
+      System.out.println("NATIVE: skip: " + iae);
+      return searcher.search(query, null, topN);
     }
   }
 
@@ -203,6 +204,7 @@ public class NativeSearch {
         throw new IllegalArgumentException("leaves must be SegmentReaders; got: " + ctx.reader());
       }
       SegmentReader reader = (SegmentReader) ctx.reader();
+      Directory dir = unwrapDirectory(reader.directory());
       if (!(reader.directory() instanceof NativeMMapDirectory)) {
         throw new IllegalArgumentException("directory must be a NativeMMapDirectory; got: " + reader.directory());
       }
@@ -318,6 +320,7 @@ public class NativeSearch {
       maxScore = Float.NaN;
     }
 
+    System.out.println("NATIVE: TermQuery had " + totalHits + " hits");
     return new TopDocs(totalHits, scoreDocs, maxScore);
   }
 
@@ -474,6 +477,9 @@ public class NativeSearch {
         // Sort by descending docFreq: we do this because
         // the first scorer is handled separately (saves an
         // if inside the inner loop):
+
+        // 4.4:
+        /*
         new InPlaceMergeSorter() {
           @Override
           protected int compare(int i, int j) {
@@ -499,6 +505,46 @@ public class NativeSearch {
             termWeights[j] = z;
           }
         }.sort(0, scorers.size()-1);
+        */
+
+        // 4.3:
+        new SorterTemplate() {
+          @Override
+          protected int compare(int i, int j) {
+            return docFreqs[j] - docFreqs[i];
+          }
+
+          @Override
+          protected void swap(int i, int j) {
+            int x = docFreqs[i];
+            docFreqs[i] = docFreqs[j];
+            docFreqs[j] = x;
+
+            x = singletonDocIDs[i];
+            singletonDocIDs[i] = singletonDocIDs[j];
+            singletonDocIDs[j] = x;
+
+            long y = docTermStartFPs[i];
+            docTermStartFPs[i] = docTermStartFPs[j];
+            docTermStartFPs[j] = y;
+
+            float z = termWeights[i];
+            termWeights[i] = termWeights[j];
+            termWeights[j] = z;
+          }
+
+          int pivotDocFreq;
+
+          @Override
+          protected void setPivot(int i) {
+            pivotDocFreq = docFreqs[i];
+          }
+
+          @Override
+          protected int comparePivot(int i) {
+            return docFreqs[i] - pivotDocFreq;
+          }
+        }.mergeSort(0, scorers.size()-1);
         
         totalHits += searchSegmentBooleanQuery(topDocIDs,
                                                topScores,
@@ -545,6 +591,7 @@ public class NativeSearch {
       maxScore = Float.NaN;
     }
 
+    System.out.println("NATIVE: BooleanQuery had " + totalHits + " hits");
     return new TopDocs(totalHits, scoreDocs, maxScore);
   }
 
@@ -586,6 +633,29 @@ public class NativeSearch {
     // install saved node
     topDocIDs[i] = savDocID;
     topScores[i] = savScore;
+  }
+
+  // Only applies when running Lucene's tests:
+  private static Directory unwrapDirectory(Directory dir) {
+    try {
+      while (true) {
+        System.out.println("unwrap: dir=" + dir);
+        String className = dir.getClass().getSimpleName();
+        if (className.equals("MockDirectoryWrapper") ||
+            className.equals("BaseDirectoryWrapper")) {
+          Class<?> x = Class.forName("org.apache.lucene.store.BaseDirectoryWrapper");
+          Field f = x.getDeclaredField("delegate");
+          f.setAccessible(true);
+          dir = (Directory) f.get(dir);
+        } else {
+          break;
+        }
+      }
+    } catch (Exception e) {
+      throw new IllegalStateException("failed to unwrapDirectory", e);
+    }
+
+    return dir;
   }
 
   // nocommit we can move most of the reflection lookups to

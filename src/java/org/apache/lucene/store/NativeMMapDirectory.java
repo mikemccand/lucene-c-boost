@@ -54,7 +54,27 @@ public class NativeMMapDirectory extends FSDirectory {
 
   @Override
   public IndexInputSlicer createSlicer(String name, IOContext context) throws IOException {
-    throw new UnsupportedOperationException();
+    final NativeMMapIndexInput full = (NativeMMapIndexInput) openInput(name, context);
+
+    return new IndexInputSlicer() {
+      @Override
+      public IndexInput openSlice(String sliceDescription, long offset, long length) throws IOException {
+        ensureOpen();
+        //System.out.println("openSlice " + sliceDescription + " offset=" + offset);
+        return new NativeMMapIndexInput(sliceDescription, full.address + offset, length, full.address + offset);
+      }
+      
+      @Override
+      public IndexInput openFullSlice() throws IOException {
+        ensureOpen();
+        return full.clone();
+      }
+
+      @Override
+      public void close() throws IOException {
+        full.close();
+      }
+    };
   }
 
   int getFileDes(FileDescriptor fd) {

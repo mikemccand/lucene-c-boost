@@ -36,8 +36,4 @@ should i make just one JNI call, passing all segments down?  or, one JNI call pe
 
 should we pre-share global stuff like byte[] norms?
 
-NOTE
-  - no safety!  index corruption / bugs = SEGV
-
-
 

@@ -15,6 +15,8 @@ Optimized implementations of certain [Apache Lucene](http://lucene.apache.org) q
                OrHighLow       19.36      (8.9%)       63.58      (2.1%)  228.5% ( 199% -  263%)
                OrHighMed        4.35      (8.8%)       15.37      (1.5%)  253.4% ( 223% -  289%)
 
+The gains come from 1) code specialization (creating dedicated code to execute exactly one kind of query, with nearly all abstractions removed), and 2) using C++ instead of Java.  It's not clear how much of the gains are due to each.
+
 The code is fully decoupled from Lucene: it uses Java's reflection APIs to grab the necessary bits for each query.
 
 This is NOT a port of Apache Lucene to C++!  Rather, it implements hardcoded C++ code to optimize certain queries.
@@ -40,6 +42,7 @@ Compile the native code to .so/.dll and install on your dynamica library path.  
 #Limitations
 <br>
 
+  * Requires Lucene 4.3.0 or 4.3.1
   * Only tested on Linux / x86 CPU so far
   * Only sort-by-score is supported
   * Query must be either BooleanQuery with only SHOULD TermQuery clauses, or a single TermQuery, or rewrite to one of those (e.g., FuzzyQuery)
