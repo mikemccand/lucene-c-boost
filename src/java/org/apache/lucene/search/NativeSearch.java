@@ -39,10 +39,13 @@ import org.apache.lucene.codecs.perfield.PerFieldPostingsFormat;
 import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.index.DocsEnum;
 import org.apache.lucene.index.FieldInfo;
+import org.apache.lucene.index.Fields;
+import org.apache.lucene.index.FilteredTermsEnum;
 import org.apache.lucene.index.NumericDocValues;
 import org.apache.lucene.index.SegmentReader;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
+import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.search.similarities.DefaultSimilarity;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.Directory;
@@ -82,7 +85,7 @@ public class NativeSearch {
       int docBase,
 
       // Current segment's liveDocs, or null:
-      byte[] liveDocBytes,
+      byte[] liveDocsBytes,
       
       // weightValue from each TermWeight:
       float[] termWeights,
@@ -122,7 +125,7 @@ public class NativeSearch {
       int docBase,
 
       // Current segment's liveDocs, or null:
-      byte[] liveDocBytes,
+      byte[] liveDocsBytes,
       
       // weightValue for this TermQuery's TermWeight
       float termWeight,
@@ -146,6 +149,15 @@ public class NativeSearch {
       // Address in memory where .doc file is mapped:
       long docFileAddress);
 
+  private static native int fillMultiTermFilter(
+      long[] bits,
+
+      byte[] liveDocsBytes,
+
+      long address,
+
+      long[] termStatsArray);
+
   /** Runs the search, using optimized C++ code when
    *  possible, but otherwise falling back on
    *  IndexSearcher. */
@@ -165,24 +177,70 @@ public class NativeSearch {
    *  search cannot be optimized then {@code
    *  IllegalArgumentException} is thrown with the reason. */
   public static TopDocs searchNative(IndexSearcher searcher, Query query, int topN) throws IOException {
-    System.out.println("NATIVE: query in=" + query);
+    //System.out.println("NATIVE: query in=" + query);
     query = searcher.rewrite(query);
-    System.out.println("NATIVE: after rewrite: " + query + "; " + query.getClass());
+    //System.out.println("NATIVE: after rewrite: " + query + "; " + query.getClass());
     return _search(searcher, query, topN);
+  }
+  
+  private static class SegmentState {
+    SegmentReader reader;
+    byte[] normBytes;
+    byte[] liveDocsBytes;
+    boolean skip;
+    Bits liveDocs;
+    int maxDoc;
+
+    public SegmentState(AtomicReaderContext ctx, String field) throws IOException {
+      if (!(ctx.reader() instanceof SegmentReader)) {
+        throw new IllegalArgumentException("leaves must be SegmentReaders; got: " + ctx.reader());
+      }
+      reader = (SegmentReader) ctx.reader();
+      maxDoc = reader.maxDoc();
+      Directory dir = unwrap(reader.directory());
+      if (!(dir instanceof NativeMMapDirectory)) {
+        throw new IllegalArgumentException("directory must be a NativeMMapDirectory; got: " + reader.directory());
+      }
+      Codec codec = reader.getSegmentInfo().info.getCodec();
+
+      FieldInfo fieldInfo = reader.getFieldInfos().fieldInfo(field);
+      if (fieldInfo == null) {
+        // Field never appeared in this segment so no docs
+        // will match:
+        skip = true;
+        return;
+      }
+      skip = false;
+      if (fieldInfo.getIndexOptions() == FieldInfo.IndexOptions.DOCS_ONLY) {
+        throw new IllegalArgumentException("field must be indexed with freqs; got: " + fieldInfo.getIndexOptions());
+      }
+
+      LiveDocsFormat ldf = codec.liveDocsFormat();
+      if (!(ldf instanceof Lucene40LiveDocsFormat)) {
+        throw new IllegalArgumentException("LiveDocsFormat must be Lucene40LiveDocsFormat; got: " + ldf);
+      }
+
+      NormsFormat nf = codec.normsFormat();
+      if (!(nf instanceof Lucene42NormsFormat)) {
+        throw new IllegalArgumentException("NormsFormat for field=" + field + " must be Lucene42NormsFormat; got: " + nf);
+      }
+
+      NumericDocValues norms = reader.getNormValues(field);
+      if (norms == null) {
+        throw new IllegalArgumentException("field=" + field + " must not omit norms; got: no norms");
+      }
+
+      normBytes = getNormsBytes(norms);
+
+      liveDocs = reader.getLiveDocs();
+
+      if (liveDocs != null) {
+        liveDocsBytes = getLiveDocsBits(liveDocs);
+      }
+    }
   }
 
   private static TopDocs _search(IndexSearcher searcher, Query query, int topN) throws IOException {
-
-    float constantScore = -1.0f;
-    if (query instanceof ConstantScoreQuery) {
-      ConstantScoreQuery csq = (ConstantScoreQuery) query;
-      Query other = csq.getQuery();
-      // Must null check because CSQ can also wrap a filter:
-      if (other != null) {
-        constantScore = csq.getBoost();
-        query = other;
-      }
-    }
 
     if (topN == 0) {
       throw new IllegalArgumentException("topN must be > 0; got: 0");
@@ -192,12 +250,170 @@ public class NativeSearch {
       topN = searcher.getIndexReader().maxDoc();
     }
 
+    float constantScore = -1.0f;
+    if (query instanceof ConstantScoreQuery) {
+      ConstantScoreQuery csq = (ConstantScoreQuery) query;
+      Query other = csq.getQuery();
+      // Must null check because CSQ can also wrap a filter:
+      if (other != null) {
+        constantScore = csq.getBoost();
+        query = other;
+        //System.out.println("unwrap csq " + query);
+      } else {
+        Filter f = csq.getFilter();
+        if (f instanceof MultiTermQueryWrapperFilter) {
+          return _searchMTQFilter(searcher, (MultiTermQueryWrapperFilter) f, topN, csq.getBoost());
+        }
+      }
+    }
+
     if (query instanceof TermQuery) {
       return _searchTermQuery(searcher, (TermQuery) query, topN, constantScore);
     } else if (query instanceof BooleanQuery) {
       return _searchBooleanQuery(searcher, (BooleanQuery) query, topN, constantScore);
     } else {
       throw new IllegalArgumentException("rewritten query must be TermQuery or BooleanQuery; got: " + query);
+    }
+  }
+
+  private static TopDocs _searchMTQFilter(IndexSearcher searcher, MultiTermQueryWrapperFilter filter, int topN, float constantScore) throws IOException {
+    List<AtomicReaderContext> leaves = searcher.getIndexReader().leaves();
+    Similarity sim = searcher.getSimilarity();
+
+    MultiTermQuery query = getMultiTermQueryWrapperFilterQuery(filter);
+
+    if (!(sim instanceof DefaultSimilarity)) {
+      throw new IllegalArgumentException("searcher.getSimilarity() must be DefaultSimilarity; got: " + sim);
+    }
+
+    String field = filter.getField();
+
+    int[] topDocIDs = new int[topN+1];
+    Arrays.fill(topDocIDs, Integer.MAX_VALUE);
+
+    int totalHits = 0;
+
+    List<ScoreDoc> scoreDocs = new ArrayList<ScoreDoc>();
+
+    for(int readerIDX=0;readerIDX<leaves.size();readerIDX++) {
+      AtomicReaderContext ctx = leaves.get(readerIDX);
+      SegmentState state = new SegmentState(ctx, field);
+      if (state.skip) {
+        continue;
+      }
+
+      Fields fields = state.reader.fields();
+      if (fields == null) {
+        continue;
+      }
+
+      Terms terms = fields.terms(field);
+      if (terms == null) {
+        continue;
+      }
+
+      TermsEnum termsEnum = query.getTermsEnum(terms);
+      if (!(termsEnum instanceof FilteredTermsEnum)) {
+        throw new IllegalArgumentException("can only handle FilteredTermsEnum; got " + termsEnum);
+      }
+
+      //TermsEnum wrappedTermsEnum = getActualTEnum(termsEnum);
+      //System.out.println("wrapped TE=" + wrappedTermsEnum);
+
+      DocsEnum docsEnum = null;
+      if (termsEnum.next() != null) {
+        // fill into a FixedBitSet
+
+        List<Long> termStats = new ArrayList<Long>();
+        
+        final FixedBitSet bitSet = new FixedBitSet(state.maxDoc);
+
+        int hits = 0;
+
+        do {
+          docsEnum = termsEnum.docs(state.liveDocs, docsEnum, DocsEnum.FLAG_NONE);
+          int docFreq = getDocFreq(docsEnum);
+          if (docFreq == 1) {
+            // Pulsed
+            if (!bitSet.getAndSet(getSingletonDocID(docsEnum))) {
+              hits++;
+            }
+          } else {
+            long docTermStartFP = getDocTermStartFP(docsEnum);
+            termStats.add((long) docFreq);
+            termStats.add(docTermStartFP);
+          }
+        } while (termsEnum.next() != null);
+
+        if (!termStats.isEmpty()) {
+          long[] bitSetBits = (long[]) getField(bitSet, "org.apache.lucene.util.FixedBitSet", "bits");
+          long[] termStatsArray = new long[termStats.size()];
+          for(int i=0;i<termStatsArray.length;i++) { 
+            termStatsArray[i] = termStats.get(i);
+          }
+          IndexInput docIn = getDocIn(docsEnum);
+          //System.out.println(termStatsArray.length + " terms");
+          hits += fillMultiTermFilter(bitSetBits, state.liveDocsBytes, getMMapAddress(docIn), termStatsArray);
+        }
+
+        totalHits += hits;
+
+        if (scoreDocs.size() < topN && hits > 0) {
+          int docID = bitSet.nextSetBit(0);
+          while (true) {
+            //System.out.println("collect docID=" + ctx.docBase + " + " + docID);
+            scoreDocs.add(new ScoreDoc(ctx.docBase + docID, constantScore));
+            if (scoreDocs.size() == topN) {
+              break;
+            }
+            docID = bitSet.nextSetBit(docID+1);
+            if (docID == -1) {
+              break;
+            }
+          }
+        }
+        // TODO: not until we add needsTotalHitCount
+        /*
+        if (scoreDocs.size() == topN) {
+          break;
+        }
+        */
+      }
+    }
+
+    return new TopDocs(totalHits, scoreDocs.toArray(new ScoreDoc[scoreDocs.size()]), constantScore);
+  }
+
+  private static Object getField(Object o, String className, String fieldName) {
+    try {
+      Class<?> x = Class.forName(className);
+      Field f = x.getDeclaredField(fieldName);
+      f.setAccessible(true);
+      return f.get(o);
+    } catch (Exception e) {
+      throw new RuntimeException("failed to get field=" + fieldName + " from class=" + className + " object=" + o, e);
+    }
+  }
+
+  private static MultiTermQuery getMultiTermQueryWrapperFilterQuery(MultiTermQueryWrapperFilter filter) {
+    try {
+      Class<?> x = Class.forName("org.apache.lucene.search.MultiTermQueryWrapperFilter");
+      Field f = x.getDeclaredField("query");
+      f.setAccessible(true);
+      return (MultiTermQuery) f.get(filter);
+    } catch (Exception e) {
+      throw new RuntimeException("failed to extract MTQWF query", e);
+    }
+  }
+
+  private static TermsEnum getActualTEnum(TermsEnum termsEnum) {
+    try {
+      Class<?> x = Class.forName("org.apache.lucene.index.FilteredTermsEnum");
+      Field f = x.getDeclaredField("tenum");
+      f.setAccessible(true);
+      return (TermsEnum) f.get(termsEnum);
+    } catch (Exception e) {
+      throw new RuntimeException("failed to extract actual tenum", e);
     }
   }
 
@@ -229,60 +445,19 @@ public class NativeSearch {
 
     int totalHits = 0;
 
+    float[] normTable = getNormTable();
+
     for(int readerIDX=0;readerIDX<leaves.size();readerIDX++) {
-
       AtomicReaderContext ctx = leaves.get(readerIDX);
-      if (!(ctx.reader() instanceof SegmentReader)) {
-        throw new IllegalArgumentException("leaves must be SegmentReaders; got: " + ctx.reader());
-      }
-      SegmentReader reader = (SegmentReader) ctx.reader();
-      Directory dir = unwrap(reader.directory());
-      if (!(dir instanceof NativeMMapDirectory)) {
-        throw new IllegalArgumentException("directory must be a NativeMMapDirectory; got: " + reader.directory());
-      }
-      Codec codec = reader.getSegmentInfo().info.getCodec();
-
-      FieldInfo fieldInfo = reader.getFieldInfos().fieldInfo(field);
-      if (fieldInfo == null) {
-        // Field never appeared in this segment so no docs
-        // will match:
+      SegmentState state = new SegmentState(ctx, field);
+      if (state.skip) {
         continue;
       }
-      if (fieldInfo.getIndexOptions() == FieldInfo.IndexOptions.DOCS_ONLY) {
-        throw new IllegalArgumentException("field must be indexed with freqs; got: " + fieldInfo.getIndexOptions());
-      }
 
-      LiveDocsFormat ldf = codec.liveDocsFormat();
-      if (!(ldf instanceof Lucene40LiveDocsFormat)) {
-        throw new IllegalArgumentException("LiveDocsFormat must be Lucene40LiveDocsFormat; got: " + ldf);
-      }
-
-      NormsFormat nf = codec.normsFormat();
-      if (!(nf instanceof Lucene42NormsFormat)) {
-        throw new IllegalArgumentException("NormsFormat for field=" + field + " must be Lucene42NormsFormat; got: " + nf);
-      }
-
-      NumericDocValues norms = reader.getNormValues(field);
-      if (norms == null) {
-        throw new IllegalArgumentException("field=" + field + " must not omit norms; got: no norms");
-      }
-
-      byte[] normBytes = getNormsBytes(norms);
-
-      Bits liveDocs = reader.getLiveDocs();
-
-      byte[] liveDocsBytes;
-      if (liveDocs != null) {
-        liveDocsBytes = getLiveDocsBits(liveDocs);
-      } else {
-        liveDocsBytes = null;
-      }
-
-      Scorer scorer = w.scorer(ctx, true, false, liveDocs);
+      Scorer scorer = w.scorer(ctx, true, false, state.liveDocs);
       //System.out.println("search TQ:" + scorer);
       if (scorer != null) {
 
-        float[] normTable = getNormTable();
         //System.out.println("SCORER: " + scorer);
         float termWeight = getTermWeight(scorer);
 
@@ -310,11 +485,11 @@ public class NativeSearch {
 
         totalHits += searchSegmentTermQuery(topDocIDs,
                                             topScores,
-                                            reader.maxDoc(),
+                                            state.maxDoc,
                                             ctx.docBase,
-                                            liveDocsBytes,
+                                            state.liveDocsBytes,
                                             termWeight,
-                                            normBytes,
+                                            state.normBytes,
                                             normTable,
                                             singletonDocID,
                                             docFreq,
@@ -323,43 +498,7 @@ public class NativeSearch {
       }
     }
 
-    //System.out.println("totalHits=" + totalHits);
-
-    ScoreDoc[] scoreDocs = new ScoreDoc[Math.min(totalHits, topN)];
-
-    int heapSize = topN;
-
-    // Pop off any remaining sentinel values first (only
-    // applies when totalHits < topN):
-    for(int i=0;i<topN-scoreDocs.length;i++) {
-      if (topScores != null) {
-        topScores[1] = topScores[heapSize];
-      }
-      topDocIDs[1] = topDocIDs[heapSize];
-      heapSize--;
-      downHeap(heapSize, topDocIDs, topScores);
-    }
-
-    for(int i=scoreDocs.length-1;i>=0;i--) {
-      scoreDocs[i] = new ScoreDoc(topDocIDs[1], topScores == null ? constantScore : topScores[1]);
-      if (topScores != null) {
-        topScores[1] = topScores[heapSize];
-      }
-      topDocIDs[1] = topDocIDs[heapSize];
-      //System.out.println("  topDocs[" + i + "]=" + scoreDocs[i].doc);
-      heapSize--;
-      downHeap(heapSize, topDocIDs, topScores);
-    }
-
-    float maxScore;
-    if (scoreDocs.length > 0) {
-      maxScore = scoreDocs[0].score;
-    } else {
-      maxScore = Float.NaN;
-    }
-
-    //System.out.println("NATIVE: TermQuery had " + totalHits + " hits");
-    return new TopDocs(totalHits, scoreDocs, maxScore);
+    return buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore);
   }
 
   private static TopDocs _searchBooleanQuery(IndexSearcher searcher, BooleanQuery query, int topN, float constantScore) throws IOException {
@@ -406,63 +545,27 @@ public class NativeSearch {
 
     List<Weight> subWeights = getBooleanSubWeights(w);
 
-    float[] topScores = new float[topN+1];
-    Arrays.fill(topScores, Float.MIN_VALUE);
+    float[] topScores;
+    if (constantScore < 0.0f) {
+      topScores = new float[topN+1];
+      Arrays.fill(topScores, Float.MIN_VALUE);
+    } else {
+      topScores = null;
+    }
+
     int[] topDocIDs = new int[topN+1];
     Arrays.fill(topDocIDs, Integer.MAX_VALUE);
     int totalHits = 0;
+    float[] normTable = getNormTable();
 
     for(int readerIDX=0;readerIDX<leaves.size();readerIDX++) {
+
       AtomicReaderContext ctx = leaves.get(readerIDX);
-      if (!(ctx.reader() instanceof SegmentReader)) {
-        throw new IllegalArgumentException("leaves must be SegmentReaders; got: " + ctx.reader());
-      }
-      SegmentReader reader = (SegmentReader) ctx.reader();
-      Directory dir = unwrap(reader.directory());
-      if (!(dir instanceof NativeMMapDirectory)) {
-        throw new IllegalArgumentException("directory must be a NativeMMapDirectory; got: " + reader.directory());
-      }
-      Codec codec = reader.getSegmentInfo().info.getCodec();
-
-      FieldInfo fieldInfo = reader.getFieldInfos().fieldInfo(field);
-      if (fieldInfo == null) {
-        // Field never appeared in this segment so no docs
-        // will match:
-        continue;
-      }
-      if (fieldInfo.getIndexOptions() == FieldInfo.IndexOptions.DOCS_ONLY) {
-        throw new IllegalArgumentException("field must be indexed with freqs; got: " + fieldInfo.getIndexOptions());
-      }
-
-      LiveDocsFormat ldf = codec.liveDocsFormat();
-      if (!(ldf instanceof Lucene40LiveDocsFormat)) {
-        throw new IllegalArgumentException("LiveDocsFormat must be Lucene40LiveDocsFormat; got: " + ldf);
-      }
-
-      NormsFormat nf = codec.normsFormat();
-      if (!(nf instanceof Lucene42NormsFormat)) {
-        throw new IllegalArgumentException("NormsFormat for field=" + field + " must be Lucene42NormsFormat; got: " + nf);
-      }
-
-      NumericDocValues norms = reader.getNormValues(field);
-      if (norms == null) {
-        throw new IllegalArgumentException("field=" + field + " must not omit norms; got: no norms");
-      }
-
-      byte[] normBytes = getNormsBytes(norms);
-
-      Bits liveDocs = reader.getLiveDocs();
-
-      byte[] liveDocsBytes;
-      if (liveDocs != null) {
-        liveDocsBytes = getLiveDocsBits(liveDocs);
-      } else {
-        liveDocsBytes = null;
-      }
+      SegmentState state = new SegmentState(ctx, field);
 
       List<Scorer> scorers = new ArrayList<Scorer>();
       for(int i=0;i<terms.length;i++) {
-        Scorer scorer = subWeights.get(i).scorer(ctx, true, false, liveDocs);
+        Scorer scorer = subWeights.get(i).scorer(ctx, true, false, state.liveDocs);
         if (scorer != null) {
           scorers.add(scorer);
         }
@@ -483,7 +586,6 @@ public class NativeSearch {
           coordFactors[i] = f;
         }
 
-        float[] normTable = getNormTable();
         final float[] termWeights = new float[scorers.size()];
         final int[] singletonDocIDs = new int[scorers.size()];
         final int[] docFreqs = new int[scorers.size()];
@@ -587,11 +689,11 @@ public class NativeSearch {
         
         totalHits += searchSegmentBooleanQuery(topDocIDs,
                                                topScores,
-                                               reader.maxDoc(),
+                                               state.maxDoc,
                                                ctx.docBase,
-                                               liveDocsBytes,
+                                               state.liveDocsBytes,
                                                termWeights,
-                                               normBytes,
+                                               state.normBytes,
                                                normTable,
                                                coordFactors,
                                                singletonDocIDs,
@@ -601,22 +703,30 @@ public class NativeSearch {
       }
     }
 
-    //System.out.println("totalHits=" + totalHits);
+    return buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore);
+  }
 
+  private static TopDocs buildTopDocs(int[] topDocIDs, float[] topScores, int totalHits, int topN, float constantScore) {
     ScoreDoc[] scoreDocs = new ScoreDoc[Math.min(totalHits, topN)];
 
     int heapSize = topN;
 
+    // Pop off any remaining sentinel values first (only
+    // applies when totalHits < topN):
     for(int i=0;i<topN-scoreDocs.length;i++) {
-      topScores[1] = topScores[heapSize];
+      if (topScores != null) {
+        topScores[1] = topScores[heapSize];
+      }
       topDocIDs[1] = topDocIDs[heapSize];
       heapSize--;
       downHeap(heapSize, topDocIDs, topScores);
     }
 
     for(int i=scoreDocs.length-1;i>=0;i--) {
-      scoreDocs[i] = new ScoreDoc(topDocIDs[1], topScores[1]);
-      topScores[1] = topScores[heapSize];
+      scoreDocs[i] = new ScoreDoc(topDocIDs[1], topScores == null ? constantScore : topScores[1]);
+      if (topScores != null) {
+        topScores[1] = topScores[heapSize];
+      }
       topDocIDs[1] = topDocIDs[heapSize];
       //System.out.println("  topDocs[" + i + "]=" + scoreDocs[i].doc);
       heapSize--;
@@ -630,7 +740,7 @@ public class NativeSearch {
       maxScore = Float.NaN;
     }
 
-    //System.out.println("NATIVE: BooleanQuery had " + totalHits + " hits");
+    //System.out.println("NATIVE: TermQuery had " + totalHits + " hits");
     return new TopDocs(totalHits, scoreDocs, maxScore);
   }
 

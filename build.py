@@ -114,7 +114,7 @@ command += ' -cp %s:build/classes/test:dist/luceneCBoost.jar' % toClassPath(DEPS
 command += ' -DtempDir=build/test'
 command += ' -Dtests.codec=Lucene42'
 command += ' -Dtests.directory=NativeMMapDirectory'
-#command += ' -Dtests.seed=0'
+command += ' -Dtests.seed=0'
 if len(sys.argv) != 1:
   command += ' -Dtests.method=%s' % sys.argv[1]
 command += ' org.junit.runner.JUnitCore'
@@ -128,4 +128,4 @@ while True:
   print(s.decode('utf-8').rstrip())
 p.wait()
 if p.returncode != 0:
-  raise RuntimeError('test failed: %s')
+  raise RuntimeError('test failed')
