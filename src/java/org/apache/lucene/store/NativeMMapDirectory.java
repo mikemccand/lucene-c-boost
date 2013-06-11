@@ -48,6 +48,7 @@ public class NativeMMapDirectory extends FSDirectory {
   @Override
   public IndexInput openInput(String name, IOContext context) throws IOException {
     ensureOpen();
+    //System.out.println("openInput name=" + name + " len=" + fileLength(name));
     File file = new File(getDirectory(), name);
     //try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
     return new NativeMMapIndexInput("NativeMMapIndexInput(path=\"" + file.toString() + "\")", new RandomAccessFile(file, "r"));

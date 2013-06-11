@@ -146,8 +146,10 @@ public class NativeSearch {
       // Address in memory where .doc file is mapped:
       long docFileAddress);
 
+  /** Runs the search, using optimized C++ code when
+   *  possible, but otherwise falling back on
+   *  IndexSearcher. */
   public static TopDocs search(IndexSearcher searcher, Query query, int topN) throws IOException {
-
     query = searcher.rewrite(query);
     //System.out.println("NATIVE: after rewrite: " + query);
 
@@ -157,6 +159,15 @@ public class NativeSearch {
       //System.out.println("NATIVE: skip: " + iae);
       return searcher.search(query, null, topN);
     }
+  }
+
+  /** Runs the search using only optimized C++ code; if the
+   *  search cannot be optimized then {@code
+   *  IllegalArgumentException} is thrown with the reason. */
+  public static TopDocs searchNative(IndexSearcher searcher, Query query, int topN) throws IOException {
+    query = searcher.rewrite(query);
+    //System.out.println("NATIVE: after rewrite: " + query);
+    return _search(searcher, query, topN);
   }
 
   private static TopDocs _search(IndexSearcher searcher, Query query, int topN) throws IOException {
@@ -179,6 +190,7 @@ public class NativeSearch {
   }
 
   private static TopDocs _searchTermQuery(IndexSearcher searcher, TermQuery query, int topN) throws IOException {
+
     List<AtomicReaderContext> leaves = searcher.getIndexReader().leaves();
     Similarity sim = searcher.getSimilarity();
 
@@ -200,6 +212,7 @@ public class NativeSearch {
     int totalHits = 0;
 
     for(int readerIDX=0;readerIDX<leaves.size();readerIDX++) {
+
       AtomicReaderContext ctx = leaves.get(readerIDX);
       if (!(ctx.reader() instanceof SegmentReader)) {
         throw new IllegalArgumentException("leaves must be SegmentReaders; got: " + ctx.reader());

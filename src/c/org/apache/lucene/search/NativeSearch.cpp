@@ -2942,7 +2942,9 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   }
 
   env->ReleasePrimitiveArrayCritical(jnorms, norms, JNI_ABORT);
-  env->ReleasePrimitiveArrayCritical(jliveDocBytes, liveDocBytes, JNI_ABORT);
+  if (jliveDocBytes != 0) {
+    env->ReleasePrimitiveArrayCritical(jliveDocBytes, liveDocBytes, JNI_ABORT);
+  }
   env->ReleasePrimitiveArrayCritical(jnormTable, normTable, JNI_ABORT);
 
   env->ReleaseIntArrayElements(jsingletonDocIDs, singletonDocIDs, JNI_ABORT);
@@ -2951,8 +2953,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   env->ReleaseFloatArrayElements(jtermWeights, termWeights, JNI_ABORT);
   env->ReleaseFloatArrayElements(jcoordFactors, coordFactors, JNI_ABORT);
 
-  env->ReleaseIntArrayElements(jtopDocIDs, topDocIDs, JNI_COMMIT);
-  env->ReleaseFloatArrayElements(jtopScores, topScores, JNI_COMMIT);
+  env->ReleaseIntArrayElements(jtopDocIDs, topDocIDs, 0);
+  env->ReleaseFloatArrayElements(jtopScores, topScores, 0);
 
   for(int i=0;i<numScorers;i++) {
     free(termScoreCache[i]);
@@ -3172,11 +3174,13 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
   }
 
   env->ReleasePrimitiveArrayCritical(jnorms, norms, JNI_ABORT);
-  env->ReleasePrimitiveArrayCritical(jliveDocBytes, liveDocBytes, JNI_ABORT);
+  if (jliveDocBytes != 0) {
+    env->ReleasePrimitiveArrayCritical(jliveDocBytes, liveDocBytes, JNI_ABORT);
+  }
   env->ReleasePrimitiveArrayCritical(jnormTable, normTable, JNI_ABORT);
 
-  env->ReleaseIntArrayElements(jtopDocIDs, topDocIDs, JNI_COMMIT);
-  env->ReleaseFloatArrayElements(jtopScores, topScores, JNI_COMMIT);
+  env->ReleaseIntArrayElements(jtopDocIDs, topDocIDs, 0);
+  env->ReleaseFloatArrayElements(jtopScores, topScores, 0);
 
   free(termScoreCache);
   free(freq1);

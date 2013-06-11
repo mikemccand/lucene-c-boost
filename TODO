@@ -1,4 +1,6 @@
-post ASL2
+hmm will this "starve" GC?
+
+must null check every getXXXArray
 
 how to work across diff't lucene versions!?
 

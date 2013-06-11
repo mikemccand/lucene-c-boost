@@ -36,6 +36,7 @@ Java_org_apache_lucene_store_NativeMMapDirectory_map(JNIEnv *env,
     sprintf(buf, "errno=%d", errno);
     return env->ThrowNew(exClass, buf);
   }
+  //printf("map addr=%ld len=%ld\n", address, fileLength);fflush(stdout);
   return address;
 }
 
@@ -44,4 +45,5 @@ Java_org_apache_lucene_store_NativeMMapDirectory_unmap(JNIEnv *env,
                                                        jclass cl,
                                                        jlong address, jlong fileLength) {
   munmap((void *) address, fileLength);
+  //printf("unmap addr=%ld len=%ld\n", address, fileLength);fflush(stdout);
 }
