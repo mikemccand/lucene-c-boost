@@ -2254,44 +2254,6 @@ static void decode31(unsigned long *blocks, unsigned int *values) {
 }
 
 
-// switch statement is a bit faster:
-/*
-typedef void (*blockDecoder)(unsigned long *, unsigned int *);
-
-static blockDecoder blockDecoders[32] = {0,
-                                         decodeSingleBlock1,
-                                         decodeSingleBlock2,
-                                         decode3,
-                                         decodeSingleBlock4,
-                                         decode5,
-                                         decode6,
-                                         decode7,
-                                         decode8,
-                                         decode9,
-                                         decode10,
-                                         decode11,
-                                         decode12,
-                                         decode13,
-                                         decode14,
-                                         decode15,
-                                         decode16,
-                                         decode17,
-                                         decode18,
-                                         decode19,
-                                         decode20,
-                                         decode21,
-                                         decode22,
-                                         decode23,
-                                         decode24,
-                                         decode25,
-                                         decode26,
-                                         decode27,
-                                         decode28,
-                                         decode29,
-                                         decode30,
-                                         decode31};
-*/
-
 static void readPackedBlock(unsigned long *longBuffer, PostingsState *sub, unsigned int *dest) {
   unsigned char bitsPerValue = readByte(sub);
   //printf("\nreadPackedBlock bpv=%d\n", bitsPerValue);
@@ -2304,29 +2266,17 @@ static void readPackedBlock(unsigned long *longBuffer, PostingsState *sub, unsig
   } else {
     int numBytes = bitsPerValue*16;
     //printf("\n  %d bytes @ p=%d\n", numBytes, (int) (sub->p - globalAddress));
-
-    // NOTE: this hurts a bit, i think because of having to
-    // skip wasted bytes:
     // Align to 8 bytes:
-    /*
-    long x = (long) sub->p;
-    x = (x+7) & ~7;
-    sub->p = (unsigned char *) x;
-    */
+    //long x = (long) sub->p;
+    //x = (x+7) & ~7;
+    //sub->p = (unsigned char *) x;
 
-    // NOTE: this hurts a bit, but if we want to use aligned
-    // SIMD it will be necessary unless we fix PF to write
-    // all bytes aligned to 16 byte boundaries:
     //memcpy(longBuffer, sub->p, numBytes);
     longBuffer = (unsigned long *) sub->p;
     sub->p += numBytes;
 
     // NOTE: Block PF uses PACKED_SINGLE_BLOCK for
     // bpv=1,2,4, else "ordinary" packed:
-
-    // switch statement is a bit faster:
-    //blockDecoders[bitsPerValue](longBuffer, dest);
-
     switch(bitsPerValue) {
       case 1:
         decodeSingleBlock1(longBuffer, dest);
@@ -2421,23 +2371,47 @@ static void readPackedBlock(unsigned long *longBuffer, PostingsState *sub, unsig
       case 31:
         decode31(longBuffer, dest);
         break;
+
     }
   }
 }
 // END AUTOGEN CODE (gen_Packed.py)
 
+static void skipPackedBlock(PostingsState *sub) {
+  unsigned char bitsPerValue = readByte(sub);
+  if (bitsPerValue == 0) {
+    // All values equal
+    readVInt(sub);
+  } else {
+    int numBytes = bitsPerValue*16;
+    sub->p += numBytes;
+  }
+}
+
 static void readVIntBlock(PostingsState *sub) {
   //printf("  readVIntBlock: %d docs\n", sub->docsLeft);
-  for(int i=0;i<sub->docsLeft;i++) {
-    unsigned int code = readVInt(sub);
-    sub->docDeltas[i] = code >> 1;
-    if ((code & 1) != 0) {
-      sub->freqs[i] = 1;
-    } else {
-      sub->freqs[i] = readVInt(sub);
+  if (sub->freqs != 0) {
+    for(int i=0;i<sub->docsLeft;i++) {
+      unsigned int code = readVInt(sub);
+      sub->docDeltas[i] = code >> 1;
+      if ((code & 1) != 0) {
+        sub->freqs[i] = 1;
+      } else {
+        sub->freqs[i] = readVInt(sub);
+      }
+      //printf("    docDeltas[%d] = %d\n", i, sub->docDeltas[i]);
+      //printf("    freqs[%d] = %d\n", i, sub->freqs[i]);
     }
-    //printf("    docDeltas[%d] = %d\n", i, sub->docDeltas[i]);
-    //printf("    freqs[%d] = %d\n", i, sub->freqs[i]);
+  } else {
+    for(int i=0;i<sub->docsLeft;i++) {
+      unsigned int code = readVInt(sub);
+      sub->docDeltas[i] = code >> 1;
+      if ((code & 1) == 0) {
+        readVInt(sub);
+      }
+      //printf("    docDeltas[%d] = %d\n", i, sub->docDeltas[i]);
+      //printf("    freqs[%d] = %d\n", i, sub->freqs[i]);
+    }
   }
 }
 
@@ -2446,7 +2420,11 @@ static void nextBlock(unsigned long *longBuffer, PostingsState* sub) {
   if (sub->docsLeft >= BLOCK_SIZE) {
     //printf("  nextBlock: packed\n");
     readPackedBlock(longBuffer, sub, sub->docDeltas);
-    readPackedBlock(longBuffer, sub, sub->freqs);
+    if (sub->freqs == 0) {
+      skipPackedBlock(sub);
+    } else {
+      readPackedBlock(longBuffer, sub, sub->freqs);
+    }
     sub->docsLeft -= BLOCK_SIZE;
     // nocommit redundant?:  only needs to be done up front?
     sub->blockEnd = BLOCK_SIZE-1;
@@ -2457,27 +2435,6 @@ static void nextBlock(unsigned long *longBuffer, PostingsState* sub) {
     sub->docsLeft = 0;
   }
 }
-
-/*
-static void nextDoc(unsigned long *longBuffer, PostingsState *sub, unsigned char *liveDocs) {
-  while (true) {
-    if (sub->blockNextRead == sub->blockEnd-1) {
-      if (sub->docsLeft == 0) {
-        sub->nextDocID = NO_MORE_DOCS;
-        return;
-      } else {
-        nextBlock(longBuffer, sub);
-      }
-    }
-    sub->nextDocID += sub->docDeltas[sub->blockNextRead];
-    sub->nextFreq = sub->freqs[sub->blockNextRead];
-    sub->blockNextRead++;
-    if (liveDocs == 0 || isSet(liveDocs, sub->nextDocID)) {
-      return;
-    }
-  }
-}
-*/
 
 static bool
 lessThan(int docID1, float score1, int docID2, float score2) {
@@ -2519,6 +2476,30 @@ downHeap(int heapSize, int *topDocIDs, float *topScores) {
   // install saved node
   topDocIDs[i] = savDocID;
   topScores[i] = savScore;
+}
+
+static void
+downHeapNoScores(int heapSize, int *topDocIDs) {
+  int i = 1;
+  // save top node
+  int savDocID = topDocIDs[i];
+  int j = i << 1;            // find smaller child
+  int k = j + 1;
+  if (k <= heapSize && topDocIDs[k] > topDocIDs[j]) {
+    j = k;
+  }
+  while (j <= heapSize && topDocIDs[j] > savDocID) {
+    // shift up child
+    topDocIDs[i] = topDocIDs[j];
+    i = j;
+    j = i << 1;
+    k = j + 1;
+    if (k <= heapSize && topDocIDs[k] > topDocIDs[j]) {
+      j = k;
+    }
+  }
+  // install saved node
+  topDocIDs[i] = savDocID;
 }
 
 static int
@@ -3058,9 +3039,14 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
     sub->freqs = freq1;
   } else {
     sub->docsLeft = docFreq;
-    sub->docDeltas = (unsigned int *) malloc(2*BLOCK_SIZE*sizeof(int));
     // Locality seemed to help here:
-    sub->freqs = sub->docDeltas + BLOCK_SIZE;
+    if (jtopScores != 0) {
+      sub->docDeltas = (unsigned int *) malloc(2*BLOCK_SIZE*sizeof(int));
+      sub->freqs = sub->docDeltas + BLOCK_SIZE;
+    } else {
+      sub->docDeltas = (unsigned int *) malloc(BLOCK_SIZE*sizeof(int));
+      sub->freqs = 0;
+    }
     //printf("docFileAddress=%ld startFP=%ld\n", docFileAddress, docTermStartFPs[i]);fflush(stdout);
     sub->p = ((unsigned char *) docFileAddress) + docTermStartFP;
     //printf("  not singleton\n");
@@ -3072,7 +3058,12 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
 
   // PQ holding top hits:
   int *topDocIDs = (int *) env->GetIntArrayElements(jtopDocIDs, 0);
-  float *topScores = (float *) env->GetFloatArrayElements(jtopScores, 0);
+  float *topScores;
+  if (jtopScores == 0) {
+    topScores = 0;
+  } else {
+    topScores = (float *) env->GetFloatArrayElements(jtopScores, 0);
+  }
   int hitCount = 0;
 
   register double *termScoreCache = (double *) malloc(32*sizeof(double));
@@ -3089,10 +3080,109 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
   
   register int totalHits = 0;
   if (liveDocBytes != 0) {
-    while (true) {
+    if (topScores == 0) {
+      while (true) {
 
-      if (isSet(liveDocBytes, nextDocID)) {
-        totalHits++;
+        if (isSet(liveDocBytes, nextDocID)) {
+          totalHits++;
+
+          int docID = docBase + nextDocID;
+
+          if (docID < topDocIDs[1]) {
+            // Hit is competitive   
+            topDocIDs[1] = docID;
+            downHeapNoScores(topN, topDocIDs);
+          }
+        }
+
+        // Inlined nextDoc:
+        if (blockLastRead == blockEnd) {
+          if (sub->docsLeft == 0) {
+            break;
+          } else {
+            nextBlock(longBuffer, sub);
+            blockLastRead = -1;
+            blockEnd = sub->blockEnd;
+          }
+        }
+
+        nextDocID += docDeltas[++blockLastRead];
+      }
+    } else {
+      while (true) {
+
+        if (isSet(liveDocBytes, nextDocID)) {
+          totalHits++;
+
+          float score;
+          int freq = freqs[blockLastRead];
+
+          if (freq < 32) {
+            score = termScoreCache[freq];
+          } else {
+            score = sqrt(freq) * termWeight;
+          }
+
+          score *= normTable[norms[nextDocID]];
+
+          int docID = docBase + nextDocID;
+
+          if (score > topScores[1] || (score == topScores[1] && docID < topDocIDs[1])) {
+            // Hit is competitive   
+            topDocIDs[1] = docID;
+            topScores[1] = score;
+
+            downHeap(topN, topDocIDs, topScores);
+            //printf("    **\n");fflush(stdout);
+          }
+        }
+
+        // Inlined nextDoc:
+        if (blockLastRead == blockEnd) {
+          if (sub->docsLeft == 0) {
+            break;
+          } else {
+            nextBlock(longBuffer, sub);
+            blockLastRead = -1;
+            blockEnd = sub->blockEnd;
+          }
+        }
+
+        nextDocID += docDeltas[++blockLastRead];
+      }
+    }
+  } else {
+
+    if (topScores == 0) {
+      while (true) {
+
+        int docID = docBase + nextDocID;
+
+        // TODO: this is silly: only first topN docs are
+        // competitive, after that we should break
+        if (docID < topDocIDs[1]) {
+          // Hit is competitive   
+          topDocIDs[1] = docID;
+
+          downHeapNoScores(topN, topDocIDs);
+        }
+
+        // Inlined nextDoc:
+        if (blockLastRead == blockEnd) {
+          if (sub->docsLeft == 0) {
+            break;
+          } else {
+            nextBlock(longBuffer, sub);
+            blockLastRead = -1;
+            blockEnd = sub->blockEnd;
+          }
+        }
+
+        nextDocID += docDeltas[++blockLastRead];
+      }
+    } else {
+
+      while (true) {
 
         float score;
         int freq = freqs[blockLastRead];
@@ -3115,59 +3205,20 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
           downHeap(topN, topDocIDs, topScores);
           //printf("    **\n");fflush(stdout);
         }
-      }
 
-      // Inlined nextDoc:
-      if (blockLastRead == blockEnd) {
-        if (sub->docsLeft == 0) {
-          break;
-        } else {
-          nextBlock(longBuffer, sub);
-          blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+        // Inlined nextDoc:
+        if (blockLastRead == blockEnd) {
+          if (sub->docsLeft == 0) {
+            break;
+          } else {
+            nextBlock(longBuffer, sub);
+            blockLastRead = -1;
+            blockEnd = sub->blockEnd;
+          }
         }
+
+        nextDocID += docDeltas[++blockLastRead];
       }
-
-      nextDocID += docDeltas[++blockLastRead];
-    }
-  } else {
-
-    while (true) {
-
-      float score;
-      int freq = freqs[blockLastRead];
-
-      if (freq < 32) {
-        score = termScoreCache[freq];
-      } else {
-        score = sqrt(freq) * termWeight;
-      }
-
-      score *= normTable[norms[nextDocID]];
-
-      int docID = docBase + nextDocID;
-
-      if (score > topScores[1] || (score == topScores[1] && docID < topDocIDs[1])) {
-        // Hit is competitive   
-        topDocIDs[1] = docID;
-        topScores[1] = score;
-
-        downHeap(topN, topDocIDs, topScores);
-        //printf("    **\n");fflush(stdout);
-      }
-
-      // Inlined nextDoc:
-      if (blockLastRead == blockEnd) {
-        if (sub->docsLeft == 0) {
-          break;
-        } else {
-          nextBlock(longBuffer, sub);
-          blockLastRead = -1;
-          blockEnd = sub->blockEnd;
-        }
-      }
-
-      nextDocID += docDeltas[++blockLastRead];
     }
 
     totalHits = docFreq;
@@ -3180,7 +3231,9 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
   env->ReleasePrimitiveArrayCritical(jnormTable, normTable, JNI_ABORT);
 
   env->ReleaseIntArrayElements(jtopDocIDs, topDocIDs, 0);
-  env->ReleaseFloatArrayElements(jtopScores, topScores, 0);
+  if (jtopScores != 0) {
+    env->ReleaseFloatArrayElements(jtopScores, topScores, 0);
+  }
 
   free(termScoreCache);
   free(freq1);

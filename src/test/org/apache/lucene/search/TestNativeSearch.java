@@ -278,6 +278,31 @@ public class TestNativeSearch extends LuceneTestCase {
     dir.close();
   }
 
+  public void testConstantScoreTermQuery() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    Document doc = new Document();
+    doc.add(new TextField("field", "a b c", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "a b x", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "x", Field.Store.NO));
+    w.addDocument(doc);
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+    IndexSearcher s = new IndexSearcher(r);
+
+    assertSameHits(s, new ConstantScoreQuery(new TermQuery(new Term("field", "a"))));
+
+    r.close();
+    dir.close();
+  }
+
   public void testTermQueryWithDelete() throws Exception {
     File tmpDir = _TestUtil.getTempDir("nativesearch");
     Directory dir = new NativeMMapDirectory(tmpDir);
@@ -301,6 +326,35 @@ public class TestNativeSearch extends LuceneTestCase {
 
     assertSameHits(s, new TermQuery(new Term("field", "x")));
 
+    r.close();
+    dir.close();
+  }
+
+  public void testPrefixQuery() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    int numDocs = atLeast(10000);
+    for(int i=0;i<numDocs;i++) {
+      Document doc = new Document();
+      String s = null;
+      while(true) {
+        s = _TestUtil.randomSimpleString(random());
+        if (s.length() > 0) {
+          break;
+        }
+      }
+      doc.add(new TextField("field", s, Field.Store.NO));
+      w.addDocument(doc);
+    }
+
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+
+    IndexSearcher s = new IndexSearcher(r);
+    assertSameHits(s, new PrefixQuery(new Term("field", "a")));
     r.close();
     dir.close();
   }

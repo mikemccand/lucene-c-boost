@@ -21,7 +21,7 @@ import StringIO
 
 MAX_SPECIALIZED_BITS_PER_VALUE = 24;
 PACKED_64_SINGLE_BLOCK_BPV = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 21, 32]
-OUTPUT_FILE = "src/java/org/apache/lucene/search/NativeSearch.cpp"
+OUTPUT_FILE = "src/c/org/apache/lucene/search/NativeSearch.cpp"
 
 def is_power_of_two(n):
   return n & (n - 1) == 0
@@ -137,9 +137,9 @@ static void readPackedBlock(unsigned long *longBuffer, PostingsState *sub, unsig
     int numBytes = bitsPerValue*16;
     //printf("\\n  %d bytes @ p=%d\\n", numBytes, (int) (sub->p - globalAddress));
     // Align to 8 bytes:
-    long x = (long) sub->p;
-    x = (x+7) & ~7;
-    sub->p = (unsigned char *) x;
+    //long x = (long) sub->p;
+    //x = (x+7) & ~7;
+    //sub->p = (unsigned char *) x;
 
     //memcpy(longBuffer, sub->p, numBytes);
     longBuffer = (unsigned long *) sub->p;

@@ -1,6 +1,12 @@
+add a "requireExactTotalHits" boolean
+
+CSQ(TermQuery) can be massively optimized in the no deletes case!
+
 hmm will this "starve" GC?
 
 must null check every getXXXArray
+
+costantScore(TQ/BQ)
 
 how to work across diff't lucene versions!?
 

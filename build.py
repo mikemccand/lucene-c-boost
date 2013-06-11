@@ -1,20 +1,45 @@
 import os
-import urllib.request
+import sys
 import subprocess
+
+try:
+  import urllib.request
+  urlopen = urllib.urlrequest.urlopen
+except ImportError:
+  import urllib2
+  urlopen = urllib2.urlopen
+  
 
 # TODO
 #  - other platforms
 
 def getMavenJAR(groupID, artifactID, version):
   url = 'http://search.maven.org/remotecontent?filepath=%s/%s/%s/%s-%s.jar' % (groupID.replace('.', '/'), artifactID, version, artifactID, version)
-  return urllib.request.urlopen(url).read()
+  return urlopen(url).read()
+
+def newer(first, second):
+  """
+  Returns True if first is newer than second.
+  """
+  if not os.path.exists(second):
+    return true
+  if type(first) is not list:
+    first = [first]
+  destModTime = os.path.getmtime(second)
+  for x in first:
+    if os.path.getmtime(x) > destModTime:
+      return True
+  return False
 
 def run(cmd):
   print('  %s' % cmd)
   p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
   stdout, stderr = p.communicate()
   if p.returncode != 0:
-    raise RuntimeError('command "%s" failed:\n%s' % (cmd, stdout.decode('utf-8')))
+    if type(stdout) is bytes:
+      stdout = stdout.decode('utf-8')
+    print('command "%s" failed:\n%s' % (cmd, stdout))
+    raise RuntimeError()
   return stdout
 
 def toClassPath(deps):
@@ -50,15 +75,24 @@ JAVA_HOME = os.environ['JAVA_HOME']
 
 if not os.path.exists('dist'):
   os.makedirs('dist')
-print('\nCompile NativeSearch.cpp')
-# -ftree-vectorizer-verbose=3
-# -march=corei7
-run('g++ -fPIC -O4 -shared -o dist/libNativeSearch.so -I%s/include -I%s/include/linux src/c/org/apache/lucene/search/NativeSearch.cpp' % (JAVA_HOME, JAVA_HOME))
-print('  done')
+genPacked = 'src/c/org/apache/lucene/search/gen_Packed.py'
+nativeSearch = 'src/c/org/apache/lucene/search/NativeSearch.cpp'
+if newer(genPacked, nativeSearch):
+  print('\nGenerated packed decode functions')
+  run('%s %s' % (sys.executable, genPacked))
 
-print('\nCompile NativeMMapDirectory.cpp')
-run('g++ -fPIC -O4 -shared -o dist/libNativeMMapDirectory.so -I%s/include -I%s/include/linux src/c/org/apache/lucene/store/NativeMMapDirectory.cpp' % (JAVA_HOME, JAVA_HOME))
-print('  done')
+nativeSearchLib = 'dist/libNativeSearch.so'
+if newer(nativeSearch, nativeSearchLib):
+  # -ftree-vectorizer-verbose=3
+  # -march=corei7
+  print('\nCompile NativeSearch.cpp')
+  run('g++ -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (nativeSearchLib, JAVA_HOME, JAVA_HOME, nativeSearch))
+
+mmapSource = 'src/c/org/apache/lucene/store/NativeMMapDirectory.cpp'
+mmapLib = 'dist/libNativeMMapDirectory.so'
+if newer(mmapSource, mmapLib):
+  print('\nCompile NativeMMapDirectory.cpp')
+  run('g++ -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (mmapLib, JAVA_HOME, JAVA_HOME, mmapSource))
 
 print('\nCompile java sources')
 if not os.path.exists('build/classes/java'):
@@ -80,7 +114,9 @@ command += ' -cp %s:build/classes/test:dist/luceneCBoost.jar' % toClassPath(DEPS
 command += ' -DtempDir=build/test'
 command += ' -Dtests.codec=Lucene42'
 command += ' -Dtests.directory=NativeMMapDirectory'
-command += ' -Dtests.seed=0'
+#command += ' -Dtests.seed=0'
+if len(sys.argv) != 1:
+  command += ' -Dtests.method=%s' % sys.argv[1]
 command += ' org.junit.runner.JUnitCore'
 command += ' org.apache.lucene.search.TestNativeSearch'
 p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)

@@ -165,12 +165,24 @@ public class NativeSearch {
    *  search cannot be optimized then {@code
    *  IllegalArgumentException} is thrown with the reason. */
   public static TopDocs searchNative(IndexSearcher searcher, Query query, int topN) throws IOException {
+    System.out.println("NATIVE: query in=" + query);
     query = searcher.rewrite(query);
-    //System.out.println("NATIVE: after rewrite: " + query);
+    System.out.println("NATIVE: after rewrite: " + query + "; " + query.getClass());
     return _search(searcher, query, topN);
   }
 
   private static TopDocs _search(IndexSearcher searcher, Query query, int topN) throws IOException {
+
+    float constantScore = -1.0f;
+    if (query instanceof ConstantScoreQuery) {
+      ConstantScoreQuery csq = (ConstantScoreQuery) query;
+      Query other = csq.getQuery();
+      // Must null check because CSQ can also wrap a filter:
+      if (other != null) {
+        constantScore = csq.getBoost();
+        query = other;
+      }
+    }
 
     if (topN == 0) {
       throw new IllegalArgumentException("topN must be > 0; got: 0");
@@ -181,15 +193,15 @@ public class NativeSearch {
     }
 
     if (query instanceof TermQuery) {
-      return _searchTermQuery(searcher, (TermQuery) query, topN);
+      return _searchTermQuery(searcher, (TermQuery) query, topN, constantScore);
     } else if (query instanceof BooleanQuery) {
-      return _searchBooleanQuery(searcher, (BooleanQuery) query, topN);
+      return _searchBooleanQuery(searcher, (BooleanQuery) query, topN, constantScore);
     } else {
       throw new IllegalArgumentException("rewritten query must be TermQuery or BooleanQuery; got: " + query);
     }
   }
 
-  private static TopDocs _searchTermQuery(IndexSearcher searcher, TermQuery query, int topN) throws IOException {
+  private static TopDocs _searchTermQuery(IndexSearcher searcher, TermQuery query, int topN, float constantScore) throws IOException {
 
     List<AtomicReaderContext> leaves = searcher.getIndexReader().leaves();
     Similarity sim = searcher.getSimilarity();
@@ -204,8 +216,14 @@ public class NativeSearch {
 
     Weight w = searcher.createNormalizedWeight(query);
 
-    float[] topScores = new float[topN+1];
-    Arrays.fill(topScores, Float.MIN_VALUE);
+    float[] topScores;
+    if (constantScore < 0.0f) {
+      topScores = new float[topN+1];
+      Arrays.fill(topScores, Float.MIN_VALUE);
+    } else {
+      topScores = null;
+    }
+
     int[] topDocIDs = new int[topN+1];
     Arrays.fill(topDocIDs, Integer.MAX_VALUE);
 
@@ -311,16 +329,22 @@ public class NativeSearch {
 
     int heapSize = topN;
 
+    // Pop off any remaining sentinel values first (only
+    // applies when totalHits < topN):
     for(int i=0;i<topN-scoreDocs.length;i++) {
-      topScores[1] = topScores[heapSize];
+      if (topScores != null) {
+        topScores[1] = topScores[heapSize];
+      }
       topDocIDs[1] = topDocIDs[heapSize];
       heapSize--;
       downHeap(heapSize, topDocIDs, topScores);
     }
 
     for(int i=scoreDocs.length-1;i>=0;i--) {
-      scoreDocs[i] = new ScoreDoc(topDocIDs[1], topScores[1]);
-      topScores[1] = topScores[heapSize];
+      scoreDocs[i] = new ScoreDoc(topDocIDs[1], topScores == null ? constantScore : topScores[1]);
+      if (topScores != null) {
+        topScores[1] = topScores[heapSize];
+      }
       topDocIDs[1] = topDocIDs[heapSize];
       //System.out.println("  topDocs[" + i + "]=" + scoreDocs[i].doc);
       heapSize--;
@@ -338,7 +362,7 @@ public class NativeSearch {
     return new TopDocs(totalHits, scoreDocs, maxScore);
   }
 
-  private static TopDocs _searchBooleanQuery(IndexSearcher searcher, BooleanQuery query, int topN) throws IOException {
+  private static TopDocs _searchBooleanQuery(IndexSearcher searcher, BooleanQuery query, int topN, float constantScore) throws IOException {
 
     List<AtomicReaderContext> leaves = searcher.getIndexReader().leaves();
     Similarity sim = searcher.getSimilarity();
@@ -355,7 +379,7 @@ public class NativeSearch {
 
     BooleanClause[] clauses = query.getClauses();
     if (clauses.length == 0) {
-      throw new IllegalArgumentException("query must have at least one BooleanClause; got: none");
+      return new TopDocs(0, new ScoreDoc[0]);
     }
 
     String field = null;
@@ -625,6 +649,11 @@ public class NativeSearch {
   }
 
   private static void downHeap(int heapSize, int[] topDocIDs, float[] topScores) {
+    if (topScores == null) {
+      downHeap(heapSize, topDocIDs);
+      return;
+    }
+
     int i = 1;
     // save top node
     int savDocID = topDocIDs[i];
@@ -648,6 +677,29 @@ public class NativeSearch {
     // install saved node
     topDocIDs[i] = savDocID;
     topScores[i] = savScore;
+  }
+
+  private static void downHeap(int heapSize, int[] topDocIDs) {
+    int i = 1;
+    // save top node
+    int savDocID = topDocIDs[i];
+    int j = i << 1;            // find smaller child
+    int k = j + 1;
+    if (k <= heapSize && topDocIDs[k] > topDocIDs[j]) {
+      j = k;
+    }
+    while (j <= heapSize && topDocIDs[j] > savDocID) {
+      // shift up child
+      topDocIDs[i] = topDocIDs[j];
+      i = j;
+      j = i << 1;
+      k = j + 1;
+      if (k <= heapSize && topDocIDs[k] > topDocIDs[j]) {
+        j = k;
+      }
+    }
+    // install saved node
+    topDocIDs[i] = savDocID;
   }
 
   // Needed only when running Lucene tests:
