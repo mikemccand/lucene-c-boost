@@ -321,7 +321,7 @@ public class NativeSearch {
       maxScore = Float.NaN;
     }
 
-    System.out.println("NATIVE: TermQuery had " + totalHits + " hits");
+    //System.out.println("NATIVE: TermQuery had " + totalHits + " hits");
     return new TopDocs(totalHits, scoreDocs, maxScore);
   }
 
@@ -593,7 +593,7 @@ public class NativeSearch {
       maxScore = Float.NaN;
     }
 
-    System.out.println("NATIVE: BooleanQuery had " + totalHits + " hits");
+    //System.out.println("NATIVE: BooleanQuery had " + totalHits + " hits");
     return new TopDocs(totalHits, scoreDocs, maxScore);
   }
 
