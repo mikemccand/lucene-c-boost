@@ -1,6 +1,3 @@
-lucene-c-boost
-==============
-
 #About
 <p>
 Optimized implementations of certain [Apache Lucene](http://lucene.apache.org) queries in C++ (via JNI) for anywhere from 0 to 6X speedup:
@@ -22,9 +19,9 @@ The gains come from 1) code specialization (creating dedicated code to execute e
 
 The code is fully decoupled from Lucene: it uses Java's reflection APIs to grab the necessary bits for each query.
 
-This is NOT a port of Apache Lucene to C++!  Rather, it implements hardcoded C++ code to optimize certain queries.
+This is NOT a port of Apache Lucene to C++!  Rather, it implements hardcoded C++ code to optimize certain queries.  The optimizations are very *narrow*: they only apply for specific queries.
 
-This is a spinoff from [LUCENE-5049](https://issues.apache.org/jira/browse/LUCENE-5049).
+This is a spinoff from [LUCENE-5049](https://issues.apache.org/jira/browse/LUCENE-5049).  This project is very new and exploratory at this point.  Use at your own risk!  (But please provide feedback if you do).
 
 <br>
 #Usage
