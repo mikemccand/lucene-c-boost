@@ -15,7 +15,7 @@ Optimized implementations of certain [Apache Lucene](http://lucene.apache.org) q
                OrHighLow       19.36      (8.9%)       63.58      (2.1%)  228.5% ( 199% -  263%)
                OrHighMed        4.35      (8.8%)       15.37      (1.5%)  253.4% ( 223% -  289%)
 
-The gains come from 1) code specialization (creating dedicated code to execute exactly one kind of query, with nearly all abstractions removed), and 2) using C++ instead of Java.  It's not clear how much of the gains are due to each.
+The gains come from 1) code specialization (creating dedicated code to execute exactly one kind of query, with nearly all abstractions removed), and 2) using C++ instead of Java.  It's not yet clear how much of the gains are due to each.
 
 The code is fully decoupled from Lucene: it uses Java's reflection APIs to grab the necessary bits for each query.
 

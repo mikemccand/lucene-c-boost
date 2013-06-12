@@ -1,4 +1,4 @@
-fix TermQuery !!  just do for loop over block size
+fix TermQuery !!  just do for loop over block size --> slower (strangely)
 
 cutover to generic getField
 
@@ -10,20 +10,17 @@ hmm will this "starve" GC?
 
 must null check every getXXXArray
 
-costantScore(TQ/BQ)
-
 how to work across diff't lucene versions!?
 
 make separate NativeMMapII impls for bounds checking (segments_N) and not?
 
-really we should do the "checking" for all segs up-front, so we don't e.g. do lots of work on first segments only to discover a bad PF in the last one
-  - or, do the native or not decision per-segment ... but this is uncommon
+later
+  - really we should do the "checking" for all segs up-front, so we don't e.g. do lots of work on first segments only to discover a bad PF in the last one
+    - or, do the native or not decision per-segment ... but this is uncommon
 
 add madvise calls for merges to NativeMMapDir?
 
 facets?
-
-filter rewrite method
 
 factor out common code in NativeSearch.java
 

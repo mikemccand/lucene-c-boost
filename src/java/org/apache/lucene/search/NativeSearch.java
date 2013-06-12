@@ -157,7 +157,9 @@ public class NativeSearch {
 
       long address,
 
-      long[] termStatsArray);
+      long[] termStatsArray,
+
+      boolean docsOnly);
 
   /** Runs the search, using optimized C++ code when
    *  possible, but otherwise falling back on
@@ -189,6 +191,7 @@ public class NativeSearch {
     byte[] normBytes;
     byte[] liveDocsBytes;
     boolean skip;
+    boolean docsOnly;
     Bits liveDocs;
     int maxDoc;
 
@@ -212,9 +215,7 @@ public class NativeSearch {
         return;
       }
       skip = false;
-      if (fieldInfo.getIndexOptions() == FieldInfo.IndexOptions.DOCS_ONLY) {
-        throw new IllegalArgumentException("field must be indexed with freqs; got: " + fieldInfo.getIndexOptions());
-      }
+      docsOnly = fieldInfo.getIndexOptions() == FieldInfo.IndexOptions.DOCS_ONLY;
 
       LiveDocsFormat ldf = codec.liveDocsFormat();
       if (!(ldf instanceof Lucene40LiveDocsFormat)) {
@@ -228,10 +229,10 @@ public class NativeSearch {
 
       NumericDocValues norms = reader.getNormValues(field);
       if (norms == null) {
-        throw new IllegalArgumentException("field=" + field + " must not omit norms; got: no norms");
+        normBytes = null;
+      } else {
+        normBytes = getNormsBytes(norms);
       }
-
-      normBytes = getNormsBytes(norms);
 
       liveDocs = reader.getLiveDocs();
 
@@ -362,7 +363,7 @@ public class NativeSearch {
         }
         IndexInput docIn = getDocIn(docsEnum);
         //System.out.println(termStatsArray.length + " terms");
-        fillMultiTermFilter(bitSetBits, state.liveDocsBytes, getMMapAddress(docIn), termStatsArray);
+        fillMultiTermFilter(bitSetBits, state.liveDocsBytes, getMMapAddress(docIn), termStatsArray, state.docsOnly);
       }
 
       if (scoreDocs.size() < topN) {
@@ -540,6 +541,12 @@ public class NativeSearch {
     for(int readerIDX=0;readerIDX<leaves.size();readerIDX++) {
       AtomicReaderContext ctx = leaves.get(readerIDX);
       SegmentState state = new SegmentState(ctx, field);
+      if (state.docsOnly) {
+        throw new IllegalArgumentException("cannot handle DOCS_ONLY field");
+      }
+      if (state.normBytes == null) {
+        throw new IllegalArgumentException("cannot handle omitNorms field");
+      }
       if (state.skip) {
         continue;
       }
@@ -652,6 +659,15 @@ public class NativeSearch {
 
       AtomicReaderContext ctx = leaves.get(readerIDX);
       SegmentState state = new SegmentState(ctx, field);
+      if (state.docsOnly) {
+        throw new IllegalArgumentException("cannot handle DOCS_ONLY field");
+      }
+      if (state.normBytes == null) {
+        throw new IllegalArgumentException("cannot handle omitNorms field");
+      }
+      if (state.skip) {
+        continue;
+      }
 
       List<Scorer> scorers = new ArrayList<Scorer>();
       for(int i=0;i<terms.length;i++) {

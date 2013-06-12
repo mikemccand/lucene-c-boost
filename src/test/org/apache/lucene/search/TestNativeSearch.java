@@ -24,6 +24,7 @@ import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.codecs.Codec;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.document.IntField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.DirectoryReader;
@@ -407,6 +408,27 @@ public class TestNativeSearch extends LuceneTestCase {
     IndexSearcher s = new IndexSearcher(r);
     assertSameHits(s, new FuzzyQuery(new Term("field", "lucne"), 1));
     assertSameHits(s, new FuzzyQuery(new Term("field", "luce"), 2));
+    r.close();
+    dir.close();
+  }
+
+  public void testNumericRangeQuery() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    for(int i=0;i<1717;i++) {
+      Document doc = new Document();
+      doc.add(new IntField("field", i, Field.Store.NO));
+      w.addDocument(doc);
+    }
+
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+
+    IndexSearcher s = new IndexSearcher(r);
+    assertSameHits(s, NumericRangeQuery.newIntRange("field", 17, 1700, true, true));
     r.close();
     dir.close();
   }

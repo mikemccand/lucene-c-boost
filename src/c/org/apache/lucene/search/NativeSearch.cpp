@@ -39,6 +39,8 @@
 #define MASK (CHUNK-1)
 
 typedef struct {
+  bool docsOnly;
+
   // How many docs left
   int docsLeft;
 
@@ -2405,7 +2407,11 @@ static void skipPackedBlock(PostingsState *sub) {
 
 static void readVIntBlock(PostingsState *sub) {
   //printf("  readVIntBlock: %d docs\n", sub->docsLeft);
-  if (sub->freqs != 0) {
+  if (sub->docsOnly) {
+    for(int i=0;i<sub->docsLeft;i++) {
+      sub->docDeltas[i] = readVInt(sub);
+    }
+  } else if (sub->freqs != 0) {
     for(int i=0;i<sub->docsLeft;i++) {
       unsigned int code = readVInt(sub);
       sub->docDeltas[i] = code >> 1;
@@ -2435,10 +2441,12 @@ static void nextBlock(unsigned long *longBuffer, PostingsState* sub) {
   if (sub->docsLeft >= BLOCK_SIZE) {
     //printf("  nextBlock: packed\n");
     readPackedBlock(longBuffer, sub, sub->docDeltas);
-    if (sub->freqs == 0) {
-      skipPackedBlock(sub);
-    } else {
-      readPackedBlock(longBuffer, sub, sub->freqs);
+    if (!sub->docsOnly) {
+      if (sub->freqs == 0) {
+        skipPackedBlock(sub);
+      } else {
+        readPackedBlock(longBuffer, sub, sub->freqs);
+      }
     }
     sub->docsLeft -= BLOCK_SIZE;
     // nocommit redundant?:  only needs to be done up front?
@@ -2963,6 +2971,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   // Init scorers:
   for(int i=0;i<numScorers;i++) {
     PostingsState *sub = &(subs[i]);
+    sub->docsOnly = false;
     sub->id = i;
     //printf("init scorers[%d] of %d\n", i, numScorers);
 
@@ -3208,6 +3217,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
 #if 0
     // curiously this more straightforward impl is slower:
     PostingsState *sub = (PostingsState *) malloc(sizeof(PostingsState));
+    sub->docsOnly = false;
     //printf("  set docsLeft=%d\n", docFreq);
     sub->docsLeft = docFreq;
     // Locality seemed to help here:
@@ -3349,6 +3359,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
 #else
 
     PostingsState *sub = (PostingsState *) malloc(sizeof(PostingsState));
+    sub->docsOnly = false;
     sub->docsLeft = docFreq;
     // Locality seemed to help here:
     if (jtopScores != 0) {
@@ -3553,7 +3564,8 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
    jlongArray jbits,
    jbyteArray jliveDocsBytes,
    jlong address,
-   jlongArray jtermStats) {
+   jlongArray jtermStats,
+   jboolean docsOnly) {
 
   unsigned long __attribute__ ((aligned(16))) longBuffer[64]; 
   unsigned char isCopy = 0;
@@ -3571,6 +3583,7 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
   long *termStats = (long *) env->GetPrimitiveArrayCritical(jtermStats, 0);
 
   PostingsState *sub = (PostingsState *) malloc(sizeof(PostingsState));
+  sub->docsOnly = (bool) docsOnly;
   sub->docDeltas = (unsigned int *) malloc(BLOCK_SIZE * sizeof(int));
   sub->freqs = 0;
 
