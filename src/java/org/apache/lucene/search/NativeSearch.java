@@ -111,7 +111,11 @@ public class NativeSearch {
       long[] docTermStartFPs,
 
       // Address in memory where .doc file is mapped:
-      long docFileAddress);
+      long docFileAddress,
+
+      int numMustNot,
+
+      int numMust);
 
   private static native int searchSegmentTermQuery(
       // PQ holding top hits so far, pre-filled with sentinel
@@ -620,11 +624,15 @@ public class NativeSearch {
 
     String field = null;
     String[] terms = new String[clauses.length];
+    final BooleanClause.Occur[] occurs = new BooleanClause.Occur[clauses.length];
     for(int i=0;i<clauses.length;i++) {
       BooleanClause clause = clauses[i];
-      if (clause.getOccur() != BooleanClause.Occur.SHOULD) {
-        throw new IllegalArgumentException("only Occur.SHOULD supported; got: " + clause.getOccur());
+      occurs[i] = clause.getOccur();
+      if (occurs[i] != BooleanClause.Occur.SHOULD &&
+          occurs[i] != BooleanClause.Occur.MUST_NOT) {
+        throw new IllegalArgumentException("only Occur.SHOULD supported; got: " + occurs[i]);
       }
+      
       if (!(clause.getQuery() instanceof TermQuery)) {
         throw new IllegalArgumentException("sub-queries must be TermQuery; got: " + clause.getQuery());
       }
@@ -670,24 +678,40 @@ public class NativeSearch {
       }
 
       List<Scorer> scorers = new ArrayList<Scorer>();
+      final List<BooleanClause.Occur> occursList = new ArrayList<BooleanClause.Occur>();
+      int numMust = 0;
+      int numMustNot = 0;
       for(int i=0;i<terms.length;i++) {
         Scorer scorer = subWeights.get(i).scorer(ctx, true, false, state.liveDocs);
         if (scorer != null) {
           scorers.add(scorer);
+          occursList.add(occurs[i]);
+          if (occurs[i] == BooleanClause.Occur.MUST) {
+            numMust++;
+          } else if (occurs[i] == BooleanClause.Occur.MUST_NOT) {
+            numMustNot++;
+          }
+        } else if (occurs[i] == BooleanClause.Occur.MUST) {
+          scorers.clear();
+          break;
         }
+      }
+
+      if (numMustNot == terms.length) {
+        throw new IllegalArgumentException("at least one clause must not be MUST_NOT");
       }
 
       if (!scorers.isEmpty()) {
 
-        float[] coordFactors = new float[terms.length+1];
+        float[] coordFactors = new float[terms.length-numMustNot+1];
         for(int i=0;i<coordFactors.length;i++) {
           float f;
           if (coordDisabled) {
             f = 1.0f;
-          } else if (terms.length == 1) {
+          } else if (terms.length-numMustNot == 1) {
             f = 1.0f;
           } else {
-            f = sim.coord(i, terms.length);
+            f = sim.coord(i, terms.length-numMustNot);
           }
           coordFactors[i] = f;
         }
@@ -758,7 +782,19 @@ public class NativeSearch {
         new SorterTemplate() {
           @Override
           protected int compare(int i, int j) {
-            return docFreqs[j] - docFreqs[i];
+            BooleanClause.Occur occuri = occursList.get(i);
+            BooleanClause.Occur occurj = occursList.get(j);
+            if (occuri == occurj) {
+              if (occuri == BooleanClause.Occur.MUST) {
+                return docFreqs[i] - docFreqs[j];
+              } else {
+                return docFreqs[j] - docFreqs[i];
+              }
+            } else if (occuri == BooleanClause.Occur.MUST_NOT || occurj == BooleanClause.Occur.SHOULD) {
+              return -1;
+            } else {
+              return 1;
+            }
           }
 
           @Override
@@ -778,18 +814,35 @@ public class NativeSearch {
             float z = termWeights[i];
             termWeights[i] = termWeights[j];
             termWeights[j] = z;
+
+            BooleanClause.Occur o = occursList.get(i);
+            occursList.set(i, occursList.get(j));
+            occursList.set(j, o);
           }
 
           int pivotDocFreq;
+          BooleanClause.Occur pivotOccur;
 
           @Override
           protected void setPivot(int i) {
             pivotDocFreq = docFreqs[i];
+            pivotOccur = occursList.get(i);
           }
 
           @Override
           protected int comparePivot(int i) {
-            return docFreqs[i] - pivotDocFreq;
+            BooleanClause.Occur occur = occursList.get(i);
+            if (pivotOccur == occur) {
+              if (pivotOccur == BooleanClause.Occur.MUST) {
+                return pivotDocFreq - docFreqs[i];
+              } else {
+                return docFreqs[i] - pivotDocFreq;
+              }
+            } else if (pivotOccur == BooleanClause.Occur.MUST_NOT || occur == BooleanClause.Occur.SHOULD) {
+              return -1;
+            } else {
+              return 1;
+            }
           }
         }.mergeSort(0, scorers.size()-1);
         
@@ -805,7 +858,9 @@ public class NativeSearch {
                                                singletonDocIDs,
                                                docFreqs,
                                                docTermStartFPs,
-                                               address);
+                                               address,
+                                               numMustNot,
+                                               numMust);
       }
     }
 

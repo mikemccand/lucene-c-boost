@@ -23,7 +23,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
+//#include <unistd.h>
 #include <sys/mman.h>
 #include <errno.h>
 #include <jni.h>
@@ -55,12 +55,6 @@ typedef struct {
   int blockEnd;
   int id;
 } PostingsState;
-
-typedef struct {
-  int docID;
-  double score;
-  int coord;
-} Bucket;
 
 //static FILE *fp = fopen("logout.txt", "w");
 
@@ -2777,6 +2771,143 @@ orChunk(unsigned long *longBuffer,
   return numFilled;
 }
 
+
+// Like orChunk, but is "aware" of skip (from previous
+// MUST_NOT clauses):
+
+static int
+orChunkWithSkip(unsigned long *longBuffer,
+                PostingsState *sub,
+                register double *tsCache,
+                register float termWeight,
+                register int endDoc,
+                register unsigned int *filled,
+                int numFilled,
+                register int *docIDs,
+                register float *scores,
+                register unsigned int *coords,
+                register unsigned char *skips) {
+
+  //printf("orChunkWithSkip\n");
+  register int nextDocID = sub->nextDocID;
+  register unsigned int *docDeltas = sub->docDeltas;
+  register unsigned int *freqs = sub->freqs;
+
+  register int blockLastRead = sub->blockLastRead;
+  register int blockEnd = sub->blockEnd;
+
+  if (scores == 0) {
+    while (nextDocID < endDoc) {
+      //printf("  docID=%d\n", nextDocID);
+      int slot = nextDocID & MASK;
+
+      if (docIDs[slot] != nextDocID) {
+        docIDs[slot] = nextDocID;
+        skips[slot] = 0;
+        filled[numFilled++] = slot;
+      }
+
+      // Inlined nextDoc:
+      if (blockLastRead == blockEnd) {
+        if (sub->docsLeft == 0) {
+          nextDocID = NO_MORE_DOCS;
+          break;
+        } else {
+          nextBlock(longBuffer, sub);
+          blockLastRead = -1;
+          blockEnd = sub->blockEnd;
+        }
+      }
+      nextDocID += docDeltas[++blockLastRead];
+    }
+  } else {
+
+    //printf("term=%d nextDoc=%d\n", i, sub->nextDocID);
+    while (nextDocID < endDoc) {
+      //printf("  docID=%d\n", nextDocID);
+      int slot = nextDocID & MASK;
+      if (docIDs[slot] != nextDocID || skips[slot] == 0) {
+        int freq = freqs[blockLastRead];
+        double score;
+        if (freq < 32) {
+          score = tsCache[freq];
+        } else {
+          score = sqrt(freq) * termWeight;
+        }
+
+        if (docIDs[slot] != nextDocID) {
+          docIDs[slot] = nextDocID;
+          scores[slot] = score;
+          coords[slot] = 1;
+          skips[slot] = 0;
+          filled[numFilled++] = slot;
+        } else {
+          scores[slot] += score;
+          coords[slot]++;
+        }
+      }
+
+      // Inlined nextDoc:
+      if (blockLastRead == blockEnd) {
+        if (sub->docsLeft == 0) {
+          nextDocID = NO_MORE_DOCS;
+          break;
+        } else {
+          nextBlock(longBuffer, sub);
+          blockLastRead = -1;
+          blockEnd = sub->blockEnd;
+        }
+      }
+      nextDocID += docDeltas[++blockLastRead];
+    }
+  }
+
+  sub->nextDocID = nextDocID;
+  sub->blockLastRead = blockLastRead;
+
+  //printf("orChunkWithSkip done\n");
+
+  return numFilled;
+}
+
+static void
+orMustNotChunk(unsigned long *longBuffer,
+               PostingsState *sub,
+               register int endDoc,
+               register int *docIDs,
+               register unsigned char *skips) {
+
+  register int nextDocID = sub->nextDocID;
+  register unsigned int *docDeltas = sub->docDeltas;
+  register unsigned int *freqs = sub->freqs;
+
+  register int blockLastRead = sub->blockLastRead;
+  register int blockEnd = sub->blockEnd;
+
+  while (nextDocID < endDoc) {
+    //printf("  docID=%d\n", nextDocID);
+    int slot = nextDocID & MASK;
+    docIDs[slot] = nextDocID;
+    skips[slot] = 1;
+
+    // Inlined nextDoc:
+    if (blockLastRead == blockEnd) {
+      if (sub->docsLeft == 0) {
+        nextDocID = NO_MORE_DOCS;
+        break;
+      } else {
+        nextBlock(longBuffer, sub);
+        blockLastRead = -1;
+        blockEnd = sub->blockEnd;
+      }
+    }
+    nextDocID += docDeltas[++blockLastRead];
+  }
+
+  sub->nextDocID = nextDocID;
+  sub->blockLastRead = blockLastRead;
+}
+
 static int
 orChunkDeletes(unsigned long *longBuffer,
                PostingsState *sub,
@@ -2870,6 +3001,104 @@ orChunkDeletes(unsigned long *longBuffer,
   return numFilled;
 }
 
+static int
+orChunkDeletesWithSkip(unsigned long *longBuffer,
+                       PostingsState *sub,
+                       register double *tsCache,
+                       register float termWeight,
+                       register int endDoc,
+                       register unsigned int *filled,
+                       int numFilled,
+                       register int *docIDs,
+                       register float *scores,
+                       register unsigned int *coords,
+                       register unsigned char *liveDocBytes,
+                       register unsigned char *skips) {
+
+  register int nextDocID = sub->nextDocID;
+  register unsigned int *docDeltas = sub->docDeltas;
+  register unsigned int *freqs = sub->freqs;
+
+  register int blockLastRead = sub->blockLastRead;
+  register int blockEnd = sub->blockEnd;
+
+  if (scores == 0) {
+    //printf("term=%d nextDoc=%d\n", i, sub->nextDocID);
+    while (nextDocID < endDoc) {
+      //printf("  docID=%d\n", nextDocID);
+      if (isSet(liveDocBytes, nextDocID)) {
+        int slot = nextDocID & MASK;
+
+        if (docIDs[slot] != nextDocID) {
+          docIDs[slot] = nextDocID;
+          skips[slot] = 0;
+          filled[numFilled++] = slot;
+        }
+      }
+
+      // Inlined nextDoc:
+      if (blockLastRead == blockEnd) {
+        if (sub->docsLeft == 0) {
+          nextDocID = NO_MORE_DOCS;
+          break;
+        } else {
+          nextBlock(longBuffer, sub);
+          blockLastRead = -1;
+          blockEnd = sub->blockEnd;
+        }
+      }
+      nextDocID += docDeltas[++blockLastRead];
+    }
+  } else {
+
+    //printf("term=%d nextDoc=%d\n", i, sub->nextDocID);
+    while (nextDocID < endDoc) {
+      //printf("  docID=%d\n", nextDocID);
+      if (isSet(liveDocBytes, nextDocID)) {
+        int slot = nextDocID & MASK;
+        if (docIDs[slot] != nextDocID || skips[slot] == 0) {
+          int freq = freqs[blockLastRead];
+          double score;
+          if (freq < 32) {
+            score = tsCache[freq];
+          } else {
+            score = sqrt(freq) * termWeight;
+          }
+
+          if (docIDs[slot] != nextDocID) {
+            docIDs[slot] = nextDocID;
+            scores[slot] = score;
+            coords[slot] = 1;
+            skips[slot] = 0;
+            filled[numFilled++] = slot;
+          } else {
+            scores[slot] += score;
+            coords[slot]++;
+          }
+        }
+      }
+
+      // Inlined nextDoc:
+      if (blockLastRead == blockEnd) {
+        if (sub->docsLeft == 0) {
+          nextDocID = NO_MORE_DOCS;
+          break;
+        } else {
+          nextBlock(longBuffer, sub);
+          blockLastRead = -1;
+          blockEnd = sub->blockEnd;
+        }
+      }
+      nextDocID += docDeltas[++blockLastRead];
+    }
+  }
+
+  sub->nextDocID = nextDocID;
+  sub->blockLastRead = blockLastRead;
+
+  return numFilled;
+}
+
 
 extern "C" JNIEXPORT jint JNICALL
 Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
@@ -2914,8 +3143,18 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
    jlongArray jdocTermStartFPs,
 
    // Address in memory where .doc file is mapped:
-   jlong docFileAddress)
+   jlong docFileAddress,
+
+   // First numNot clauses are MUST_NOT
+   jint numMustNot,
+
+   // Next numMust clauses are MUST
+   jint numMust)
 {
+
+  // Clauses come in sorted MUST_NOT (docFreq descending),
+  // MUST (docFreq ascending), SHOULD (docFreq descending)
+
   unsigned long __attribute__ ((aligned(16))) longBuffer[64]; 
 
   //printf("START search\n"); fflush(stdout);
@@ -2930,6 +3169,9 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
     scores = (float *) malloc(CHUNK * sizeof(float));
     coords = (unsigned int *) malloc(CHUNK * sizeof(int));
   }
+
+  // Set to 1 by a MUST_NOT match:
+  unsigned char *skips = (unsigned char *) calloc(CHUNK, sizeof(char));
 
   int *docIDs = (int *) malloc(CHUNK * sizeof(int));
 
@@ -2985,7 +3227,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
       sub->freqs = freq1;
     } else {
       sub->docsLeft = docFreqs[i];
-      if (scores != 0) {
+      if (scores != 0 && i >= numMustNot) {
         sub->docDeltas = (unsigned int *) malloc(2*BLOCK_SIZE*sizeof(int));
         // Locality seemed to help here:
         sub->freqs = sub->docDeltas + BLOCK_SIZE;
@@ -3015,7 +3257,6 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
     topScores = 0;
   }
   unsigned int *filled = (unsigned int *) malloc(CHUNK * sizeof(int));
-  int numFilled;
   int hitCount = 0;
 
   double **termScoreCache = (double **) malloc(numScorers*sizeof(double*));
@@ -3030,7 +3271,20 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
     register int endDoc = docUpto + CHUNK;
     //printf("cycle endDoc=%d dels=%lx\n", endDoc, liveDocBytes);fflush(stdout);
 
-    if (liveDocBytes != 0) {
+    int numFilled = 0;
+
+    if (numMustNot != 0) {
+      for(int i=0;i<numScorers;i++) {
+        if (i < numMustNot) {
+          orMustNotChunk(longBuffer, &subs[i], endDoc, docIDs, skips);
+        } else if (liveDocBytes != 0) {
+          numFilled = orChunkDeletesWithSkip(longBuffer, &subs[i], termScoreCache[i], termWeights[i], endDoc, filled, numFilled, docIDs, scores, coords,
+                                             liveDocBytes, skips);
+        } else {
+          numFilled = orChunkWithSkip(longBuffer, &subs[i], termScoreCache[i], termWeights[i], endDoc, filled, numFilled, docIDs, scores, coords, skips);
+        }
+      }
+    } else if (liveDocBytes != 0) {
       // Collect first sub without if, since we know every
       // slot will be stale:
       numFilled = orFirstChunkDeletes(longBuffer, &subs[0], termScoreCache[0], termWeights[0], endDoc, filled, docIDs, scores, coords, liveDocBytes);
@@ -3047,12 +3301,55 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
     }
 
     hitCount += numFilled;
-    
-    if (topScores == 0) {
+
+    if (numMustNot != 0) {
+      if (topScores == 0) {
+        for(int i=0;i<numFilled;i++) {
+          int slot = filled[i];
+          if (skips[slot]) {
+            continue;
+          }
+          int docID = docBase + docIDs[slot];
+          // TODO: we can stop collecting, and tracking filled,
+          // after chunk once queue is full
+          if (docID < topDocIDs[1]) {
+            // Hit is competitive   
+            topDocIDs[1] = docID;
+            downHeapNoScores(topN, topDocIDs);
+            //printf("    **\n");fflush(stdout);
+          }
+        }
+      } else {
+
+        // Collect:
+        //printf("collect:\n");
+        for(int i=0;i<numFilled;i++) {
+          int slot = filled[i];
+          if (skips[slot]) {
+            continue;
+          }
+          float score = scores[slot] * coordFactors[coords[slot]] * normTable[norms[docIDs[slot]]];
+          int docID = docBase + docIDs[slot];
+          //printf("  docBase=%d doc=%d score=%.5f coord=%d cf=%.5f\n",
+          //docBase, docID, score, coords[slot], coordFactors[coords[slot]]);
+
+          if (score > topScores[1] || (score == topScores[1] && docID < topDocIDs[1])) {
+            // Hit is competitive   
+            topDocIDs[1] = docID;
+            topScores[1] = score;
+
+            downHeap(topN, topDocIDs, topScores);
+        
+            //printf("    **\n");fflush(stdout);
+          }
+        }
+      }
+    } else if (topScores == 0) {
       for(int i=0;i<numFilled;i++) {
         int slot = filled[i];
         int docID = docBase + docIDs[slot];
-        // TODO: we can stop after chunk once queue is full
+        // TODO: we can stop collecting, and tracking filled,
+        // after chunk once queue is full
         if (docID < topDocIDs[1]) {
           // Hit is competitive   
           topDocIDs[1] = docID;
@@ -3109,6 +3406,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   free(termScoreCache);
   free(filled);
   free(docIDs);
+  free(skips);
   if (scores != 0) {
     free(scores);
     free(coords);
