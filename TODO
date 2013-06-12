@@ -1,5 +1,7 @@
 fix TermQuery !!  just do for loop over block size
 
+cutover to generic getField
+
 add a "requireExactTotalHits" boolean
 
 CSQ(TermQuery) can be massively optimized in the no deletes case!

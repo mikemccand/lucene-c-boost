@@ -69,13 +69,11 @@ bool isSet(unsigned char *bits, unsigned int docID) {
 }
 
 // Returns 1 if the bit was not previously set
-static int setLongBit(long *bits, int index) {
+inline static void setLongBit(long *bits, int index) {
   int wordNum = index >> 6;      // div 64
   int bit = index & 0x3f;     // mod 64
   long bitmask = 1L << bit;
-  long prev = bits[wordNum];
   bits[wordNum] |= bitmask;
-  return ((prev & bitmask) != 0) ? 0 : 1;
 }
 
 static int getLongBit(long *bits, int index) {
@@ -3548,7 +3546,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
   return totalHits;
 }
 
-extern "C" JNIEXPORT jint JNICALL
+extern "C" JNIEXPORT void JNICALL
 Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
   (JNIEnv *env,
    jclass cl,
@@ -3567,8 +3565,10 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
     liveDocsBytes = (unsigned char *) env->GetPrimitiveArrayCritical(jliveDocsBytes, &isCopy);
   }
 
+  isCopy = 0;
   long *bits = (long *) env->GetPrimitiveArrayCritical(jbits, &isCopy);
-  long *termStats = (long *) env->GetLongArrayElements(jtermStats, 0);
+
+  long *termStats = (long *) env->GetPrimitiveArrayCritical(jtermStats, 0);
 
   PostingsState *sub = (PostingsState *) malloc(sizeof(PostingsState));
   sub->docDeltas = (unsigned int *) malloc(BLOCK_SIZE * sizeof(int));
@@ -3579,7 +3579,6 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
   int numTerms = env->GetArrayLength(jtermStats);
   //printf("numTerms=%d\n", numTerms);
   int i = 0;
-  int totalHits = 0;
   while (i < numTerms) {
     sub->docsLeft = (int) termStats[i++];
     sub->p = (unsigned char *) (address + termStats[i++]);
@@ -3594,14 +3593,12 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
       if (liveDocsBytes == 0) {
         for(int j=0;j<limit;j++) {
           nextDocID += docDeltas[j];
-          totalHits += setLongBit(bits, nextDocID);
+          setLongBit(bits, nextDocID);
         }
       } else {
         for(int j=0;j<limit;j++) {
           nextDocID += docDeltas[j];
-          if (!isSet(liveDocsBytes, nextDocID)) {
-            totalHits += setLongBit(bits, nextDocID);
-          }
+          setLongBit(bits, nextDocID);
         }
       }
       if (sub->docsLeft == 0) {
@@ -3618,9 +3615,7 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
   if (jliveDocsBytes != 0) {
     env->ReleasePrimitiveArrayCritical(jliveDocsBytes, liveDocsBytes, JNI_ABORT);
   }
-  env->ReleaseLongArrayElements(jtermStats, termStats, JNI_ABORT);
+  env->ReleasePrimitiveArrayCritical(jtermStats, termStats, JNI_ABORT);
   env->ReleasePrimitiveArrayCritical(jbits, bits, JNI_ABORT);
-
-  return totalHits;
 }
 

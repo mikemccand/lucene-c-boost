@@ -361,7 +361,7 @@ public class TestNativeSearch extends LuceneTestCase {
     dir.close();
   }
 
-  public void testPrefixQuery() throws Exception {
+  public void testPrefixAndWildcardQuery() throws Exception {
     File tmpDir = _TestUtil.getTempDir("nativesearch");
     Directory dir = new NativeMMapDirectory(tmpDir);
     IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
@@ -386,6 +386,7 @@ public class TestNativeSearch extends LuceneTestCase {
 
     IndexSearcher s = new IndexSearcher(r);
     assertSameHits(s, new PrefixQuery(new Term("field", "a")));
+    assertSameHits(s, new WildcardQuery(new Term("field", "a*b")));
     r.close();
     dir.close();
   }

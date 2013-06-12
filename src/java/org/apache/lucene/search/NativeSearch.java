@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.lucene.codecs.BlockTermState;
 import org.apache.lucene.codecs.Codec;
 import org.apache.lucene.codecs.LiveDocsFormat;
 import org.apache.lucene.codecs.NormsFormat;
@@ -149,7 +150,7 @@ public class NativeSearch {
       // Address in memory where .doc file is mapped:
       long docFileAddress);
 
-  private static native int fillMultiTermFilter(
+  private static native void fillMultiTermFilter(
       long[] bits,
 
       byte[] liveDocsBytes,
@@ -291,10 +292,8 @@ public class NativeSearch {
     int[] topDocIDs = new int[topN+1];
     Arrays.fill(topDocIDs, Integer.MAX_VALUE);
 
-    int totalHits = 0;
-
     List<ScoreDoc> scoreDocs = new ArrayList<ScoreDoc>();
-
+    int totalHits = 0;
     for(int readerIDX=0;readerIDX<leaves.size();readerIDX++) {
       AtomicReaderContext ctx = leaves.get(readerIDX);
       SegmentState state = new SegmentState(ctx, field);
@@ -312,54 +311,63 @@ public class NativeSearch {
         continue;
       }
 
+      List<Long> termStats = new ArrayList<Long>();
+
       TermsEnum termsEnum = query.getTermsEnum(terms);
-      if (!(termsEnum instanceof FilteredTermsEnum)) {
+      if (termsEnum.next() == null) {
+        continue;
+      }
+
+      DocsEnum docsEnum = termsEnum.docs(null, null);
+
+      // fill into a FixedBitSet
+      FixedBitSet bitSet = new FixedBitSet(state.maxDoc);
+
+      if (termsEnum instanceof FilteredTermsEnum) {
+        TermsEnum wrappedTermsEnum = getActualTEnum(termsEnum);
+        //System.out.println("wrapped TE=" + wrappedTermsEnum);
+
+        do {
+          BlockTermState termState = getTermState(wrappedTermsEnum);
+          if (termState.docFreq == 1) {
+            // Pulsed
+            bitSet.set(getSingletonDocID(termState));
+          } else {
+            termStats.add((long) termState.docFreq);
+            termStats.add(getDocTermStartFP(termState));
+            //System.out.println("term: " + termsEnum.term().utf8ToString() + " docFreq=" + termState.docFreq + " startFP=" + getDocTermStartFP(termState));
+          }
+        } while (termsEnum.next() != null);
+      } else if (blockTreeIntersectEnum.isInstance(termsEnum)) {
+        do {
+          BlockTermState termState = getIntersectTermState(termsEnum);
+          if (termState.docFreq == 1) {
+            // Pulsed
+            bitSet.set(getSingletonDocID(termState));
+          } else {
+            termStats.add((long) termState.docFreq);
+            termStats.add(getDocTermStartFP(termState));
+            //System.out.println("term: " + termsEnum.term().utf8ToString() + " docFreq=" + termState.docFreq + " startFP=" + getDocTermStartFP(termState));
+          }
+        } while (termsEnum.next() != null);
+      } else {
         throw new IllegalArgumentException("can only handle FilteredTermsEnum; got " + termsEnum);
       }
 
-      //TermsEnum wrappedTermsEnum = getActualTEnum(termsEnum);
-      //System.out.println("wrapped TE=" + wrappedTermsEnum);
-
-      DocsEnum docsEnum = null;
-      if (termsEnum.next() != null) {
-        // fill into a FixedBitSet
-
-        List<Long> termStats = new ArrayList<Long>();
-        
-        final FixedBitSet bitSet = new FixedBitSet(state.maxDoc);
-
-        int hits = 0;
-
-        do {
-          docsEnum = termsEnum.docs(state.liveDocs, docsEnum, DocsEnum.FLAG_NONE);
-          int docFreq = getDocFreq(docsEnum);
-          if (docFreq == 1) {
-            // Pulsed
-            if (!bitSet.getAndSet(getSingletonDocID(docsEnum))) {
-              hits++;
-            }
-          } else {
-            long docTermStartFP = getDocTermStartFP(docsEnum);
-            termStats.add((long) docFreq);
-            termStats.add(docTermStartFP);
-          }
-        } while (termsEnum.next() != null);
-
-        if (!termStats.isEmpty()) {
-          long[] bitSetBits = (long[]) getField(bitSet, "org.apache.lucene.util.FixedBitSet", "bits");
-          long[] termStatsArray = new long[termStats.size()];
-          for(int i=0;i<termStatsArray.length;i++) { 
-            termStatsArray[i] = termStats.get(i);
-          }
-          IndexInput docIn = getDocIn(docsEnum);
-          //System.out.println(termStatsArray.length + " terms");
-          hits += fillMultiTermFilter(bitSetBits, state.liveDocsBytes, getMMapAddress(docIn), termStatsArray);
+      if (!termStats.isEmpty()) {
+        long[] bitSetBits = (long[]) getField(bitSet, "org.apache.lucene.util.FixedBitSet", "bits");
+        long[] termStatsArray = new long[termStats.size()];
+        for(int i=0;i<termStatsArray.length;i++) { 
+          termStatsArray[i] = termStats.get(i);
         }
+        IndexInput docIn = getDocIn(docsEnum);
+        //System.out.println(termStatsArray.length + " terms");
+        fillMultiTermFilter(bitSetBits, state.liveDocsBytes, getMMapAddress(docIn), termStatsArray);
+      }
 
-        totalHits += hits;
-
-        if (scoreDocs.size() < topN && hits > 0) {
-          int docID = bitSet.nextSetBit(0);
+      if (scoreDocs.size() < topN) {
+        int docID = bitSet.nextSetBit(0);
+        if (docID != -1) {
           while (true) {
             //System.out.println("collect docID=" + ctx.docBase + " + " + docID);
             scoreDocs.add(new ScoreDoc(ctx.docBase + docID, constantScore));
@@ -372,16 +380,98 @@ public class NativeSearch {
             }
           }
         }
-        // TODO: not until we add needsTotalHitCount
-        /*
-        if (scoreDocs.size() == topN) {
-          break;
-        }
-        */
       }
+      totalHits += bitSet.cardinality();
+      // TODO: not until we add needsTotalHitCount
+      /*
+        if (scoreDocs.size() == topN) {
+        break;
+        }
+      */
     }
 
     return new TopDocs(totalHits, scoreDocs.toArray(new ScoreDoc[scoreDocs.size()]), constantScore);
+  }
+
+  static final Field blockTermStateDocStartFPField;
+  static final Field blockTermStateSingletonDocIDField;
+  static final Field blockTreeCurrentFrameField;
+  static final Method decodeMetaDataMethod;
+  static final Method intersectDecodeMetaDataMethod;
+  static final Field frameStateField;
+  static final Class blockTreeIntersectEnum;
+  static final Field blockTreeIntersectCurrentFrameField;
+  static final Field intersectFrameStateField;
+
+  static {
+    try {
+      Class<?> x = Class.forName("org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$IntBlockTermState");
+      blockTermStateDocStartFPField = x.getDeclaredField("docStartFP");
+      blockTermStateDocStartFPField.setAccessible(true);
+
+      blockTermStateSingletonDocIDField = x.getDeclaredField("singletonDocID");
+      blockTermStateSingletonDocIDField.setAccessible(true);
+
+      x = Class.forName("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$SegmentTermsEnum");
+      blockTreeCurrentFrameField = x.getDeclaredField("currentFrame");
+      blockTreeCurrentFrameField.setAccessible(true);
+
+      x = Class.forName("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$SegmentTermsEnum$Frame");
+      decodeMetaDataMethod = x.getDeclaredMethod("decodeMetaData");
+      decodeMetaDataMethod.setAccessible(true);
+      frameStateField = x.getDeclaredField("state");
+      frameStateField.setAccessible(true);
+
+      blockTreeIntersectEnum = Class.forName("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$IntersectEnum");
+      blockTreeIntersectCurrentFrameField = blockTreeIntersectEnum.getDeclaredField("currentFrame");
+      blockTreeIntersectCurrentFrameField.setAccessible(true);
+
+      x = Class.forName("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$IntersectEnum$Frame");
+      intersectDecodeMetaDataMethod = x.getDeclaredMethod("decodeMetaData");
+      intersectDecodeMetaDataMethod.setAccessible(true);
+      intersectFrameStateField = x.getDeclaredField("termState");
+      intersectFrameStateField.setAccessible(true);
+    } catch (Exception e) {
+      throw new IllegalStateException("reflection failed", e);
+    }
+  }
+
+  private static long getDocTermStartFP(BlockTermState state) {
+    try {
+      return blockTermStateDocStartFPField.getLong(state);
+    } catch (Exception e) {
+      throw new IllegalStateException("reflection failed");
+    }
+  }
+
+  private static int getSingletonDocID(BlockTermState state) {
+    try {
+      return blockTermStateSingletonDocIDField.getInt(state);
+    } catch (Exception e) {
+      throw new IllegalStateException("reflection failed", e);
+    }
+  }
+
+  private static BlockTermState getTermState(TermsEnum termsEnum) {
+    //System.out.println("TE: " + termsEnum);
+    try {
+      Object o = blockTreeCurrentFrameField.get(termsEnum);
+      decodeMetaDataMethod.invoke(o);
+      return (BlockTermState) frameStateField.get(o);
+    } catch (Exception e) {
+      throw new IllegalStateException("reflection failed", e);
+    }
+  }
+
+  private static BlockTermState getIntersectTermState(TermsEnum termsEnum) {
+    //System.out.println("TE: " + termsEnum);
+    try {
+      Object o = blockTreeIntersectCurrentFrameField.get(termsEnum);
+      intersectDecodeMetaDataMethod.invoke(o);
+      return (BlockTermState) intersectFrameStateField.get(o);
+    } catch (Exception e) {
+      throw new IllegalStateException("reflection failed", e);
+    }
   }
 
   private static Object getField(Object o, String className, String fieldName) {
@@ -845,7 +935,7 @@ public class NativeSearch {
         return dir;
       }
     } catch (Exception e) {
-      throw new IllegalStateException("failed to unwrapDirectory", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 
@@ -862,7 +952,7 @@ public class NativeSearch {
         return docsEnum;
       }
     } catch (Exception e) {
-      throw new IllegalStateException("failed to unwrap DocsEnum", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 
@@ -876,7 +966,7 @@ public class NativeSearch {
       f.setAccessible(true);
       return (float[]) f.get(x);
     } catch (Exception e) {
-      throw new IllegalStateException("failed to access NORM_TABLE", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 
@@ -887,7 +977,7 @@ public class NativeSearch {
       f.setAccessible(true);
       return f.getLong(in);
     } catch (Exception e) {
-      throw new IllegalStateException("failed to access ByteBuffer addresses via reflection", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 
@@ -904,7 +994,7 @@ public class NativeSearch {
       weightsField.setAccessible(true);
       return weightsField.getFloat(o);
     } catch (Exception e) {
-      throw new IllegalStateException("failed to access TFIDFSimilarity via reflection", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 
@@ -915,7 +1005,7 @@ public class NativeSearch {
       f.setAccessible(true);
       return (byte[]) f.get(bits);
     } catch (Exception e) {
-      throw new IllegalStateException("failed to access TermScorer.docsEnum via reflection", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 
@@ -926,7 +1016,7 @@ public class NativeSearch {
       f.setAccessible(true);
       return (DocsEnum) f.get(scorer);
     } catch (Exception e) {
-      throw new IllegalStateException("failed to access TermScorer.docsEnum via reflection", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 
@@ -937,7 +1027,7 @@ public class NativeSearch {
       f.setAccessible(true);
       return f.getInt(docsEnum);
     } catch (Exception e) {
-      throw new IllegalStateException("failed to access docFreq via reflection", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 
@@ -948,7 +1038,7 @@ public class NativeSearch {
       f.setAccessible(true);
       return unwrap((IndexInput) f.get(docsEnum));
     } catch (Exception e) {
-      throw new IllegalStateException("failed to access docFreq via reflection", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 
@@ -959,7 +1049,7 @@ public class NativeSearch {
       f.setAccessible(true);
       return f.getLong(docsEnum);
     } catch (Exception e) {
-      throw new IllegalStateException("failed to access docFreq via reflection", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 
@@ -970,7 +1060,7 @@ public class NativeSearch {
       f.setAccessible(true);
       return f.getInt(docsEnum);
     } catch (Exception e) {
-      throw new IllegalStateException("failed to access docFreq via reflection", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 
@@ -982,7 +1072,7 @@ public class NativeSearch {
       weightsField.setAccessible(true);
       return (List<Weight>) weightsField.get(w);
     } catch (Exception e) {
-      throw new IllegalStateException("failed to access BooleanWeight.weights via reflection", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 
@@ -993,7 +1083,7 @@ public class NativeSearch {
       bytesField.setAccessible(true);
       return (byte[]) bytesField.get(norms);
     } catch (Exception e) {
-      throw new IllegalStateException("failed to access norm byte[] via reflection", e);
+      throw new IllegalStateException("reflection failed", e);
     }
   }
 }
