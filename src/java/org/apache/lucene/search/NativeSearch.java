@@ -628,10 +628,6 @@ public class NativeSearch {
     for(int i=0;i<clauses.length;i++) {
       BooleanClause clause = clauses[i];
       occurs[i] = clause.getOccur();
-      if (occurs[i] != BooleanClause.Occur.SHOULD &&
-          occurs[i] != BooleanClause.Occur.MUST_NOT) {
-        throw new IllegalArgumentException("only Occur.SHOULD supported; got: " + occurs[i]);
-      }
       
       if (!(clause.getQuery() instanceof TermQuery)) {
         throw new IllegalArgumentException("sub-queries must be TermQuery; got: " + clause.getQuery());

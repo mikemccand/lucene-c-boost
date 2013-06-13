@@ -128,6 +128,182 @@ public class TestNativeSearch extends LuceneTestCase {
     dir.close();
   }
 
+  public void testBooleanShouldMustQuery() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    Document doc = new Document();
+    doc.add(new TextField("field", "a b c", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "a b x", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "x", Field.Store.NO));
+    w.addDocument(doc);
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+    IndexSearcher s = new IndexSearcher(r);
+
+    BooleanQuery bq = new BooleanQuery();
+    bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
+    bq.add(new TermQuery(new Term("field", "x")), BooleanClause.Occur.MUST);
+    assertSameHits(s, bq);
+    
+    r.close();
+    dir.close();
+  }
+
+  public void testBooleanShouldMustMustNotQuery() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    Document doc = new Document();
+    doc.add(new TextField("field", "a b c", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "a b x", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "x", Field.Store.NO));
+    w.addDocument(doc);
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+    IndexSearcher s = new IndexSearcher(r);
+
+    BooleanQuery bq = new BooleanQuery();
+    bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
+    bq.add(new TermQuery(new Term("field", "x")), BooleanClause.Occur.MUST);
+    bq.add(new TermQuery(new Term("field", "c")), BooleanClause.Occur.MUST_NOT);
+    assertSameHits(s, bq);
+    
+    r.close();
+    dir.close();
+  }
+
+  public void testBooleanShouldMustMustNotQueryWithDeletes() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    Document doc = new Document();
+    doc.add(new TextField("field", "a b c", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "a b x", Field.Store.NO));
+    doc.add(new StringField("id", "0", Field.Store.NO));
+    w.addDocument(doc);
+    w.deleteDocuments(new Term("id", "0"));
+    doc = new Document();
+    doc.add(new TextField("field", "x", Field.Store.NO));
+    w.addDocument(doc);
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+    IndexSearcher s = new IndexSearcher(r);
+
+    BooleanQuery bq = new BooleanQuery();
+    bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
+    bq.add(new TermQuery(new Term("field", "x")), BooleanClause.Occur.MUST);
+    bq.add(new TermQuery(new Term("field", "c")), BooleanClause.Occur.MUST_NOT);
+    assertSameHits(s, bq);
+    
+    r.close();
+    dir.close();
+  }
+
+  public void testBooleanMustQuery() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    Document doc = new Document();
+    doc.add(new TextField("field", "a b c", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "a b x", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "x", Field.Store.NO));
+    w.addDocument(doc);
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+    IndexSearcher s = new IndexSearcher(r);
+
+    BooleanQuery bq = new BooleanQuery();
+    bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.MUST);
+    bq.add(new TermQuery(new Term("field", "x")), BooleanClause.Occur.MUST);
+    assertSameHits(s, bq);
+    
+    r.close();
+    dir.close();
+  }
+
+  public void testBooleanShouldMustQueryWithDeletes() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    Document doc = new Document();
+    doc.add(new TextField("field", "a b c", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "a b x", Field.Store.NO));
+    doc.add(new StringField("id", "0", Field.Store.NO));
+    w.addDocument(doc);
+    w.deleteDocuments(new Term("id", "0"));
+    doc = new Document();
+    doc.add(new TextField("field", "x", Field.Store.NO));
+    w.addDocument(doc);
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+    IndexSearcher s = new IndexSearcher(r);
+
+    BooleanQuery bq = new BooleanQuery();
+    bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
+    bq.add(new TermQuery(new Term("field", "x")), BooleanClause.Occur.MUST);
+    assertSameHits(s, bq);
+    
+    r.close();
+    dir.close();
+  }
+
+  public void testBooleanMustQueryWithDeletes() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    Document doc = new Document();
+    doc.add(new TextField("field", "a b c", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "a b x", Field.Store.NO));
+    doc.add(new StringField("id", "0", Field.Store.NO));
+    w.addDocument(doc);
+    w.deleteDocuments(new Term("id", "0"));
+    doc = new Document();
+    doc.add(new TextField("field", "x", Field.Store.NO));
+    w.addDocument(doc);
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+    IndexSearcher s = new IndexSearcher(r);
+
+    BooleanQuery bq = new BooleanQuery();
+    bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.MUST);
+    bq.add(new TermQuery(new Term("field", "x")), BooleanClause.Occur.MUST);
+    assertSameHits(s, bq);
+    
+    r.close();
+    dir.close();
+  }
+
   public void testBooleanMustNotQueryDeletes() throws Exception {
     File tmpDir = _TestUtil.getTempDir("nativesearch");
     Directory dir = new NativeMMapDirectory(tmpDir);

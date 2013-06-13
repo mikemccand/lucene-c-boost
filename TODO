@@ -2,6 +2,10 @@ structural diffs
   - IntNRQ: stops collecting after first topN hits
   - sending MUST_NOT to BS
 
+run all Lucene tests again
+
+convert live docs -> FixedBitSet?  so i can share code w/ filter ...
+
 need to cherrypick which MUST queries are "appropriate" for BS1...
 
 get omitNorms working
@@ -59,5 +63,3 @@ make good random test
 should i make just one JNI call, passing all segments down?  or, one JNI call per segment?
 
 should we pre-share global stuff like byte[] norms?
-
-

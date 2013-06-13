@@ -84,7 +84,10 @@ if newer(genPacked, common):
 cSources = [common,
             'src/c/org/apache/lucene/search/NativeSearch.cpp',
             'src/c/org/apache/lucene/search/BooleanQueryOnlyShould.cpp',
-            'src/c/org/apache/lucene/search/BooleanQueryShouldMustNot.cpp']
+            'src/c/org/apache/lucene/search/BooleanQueryShouldMustNot.cpp',
+            'src/c/org/apache/lucene/search/BooleanQueryShouldMust.cpp',
+            'src/c/org/apache/lucene/search/BooleanQueryShouldMustMustNot.cpp',
+            ]
 
 nativeSearchLib = 'dist/libNativeSearch.so'
 if newer(cSources, nativeSearchLib):

@@ -219,15 +219,29 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   int hitCount;
 
   if (numMustNot == 0 && numMust == 0) {
+    // Only SHOULD
     hitCount = booleanQueryOnlyShould(subs, liveDocsBytes, termScoreCache, termWeights,
                                       maxDoc, topN, numScorers, docBase, filled, docIDs, scores, coords,
                                       topScores, topDocIDs, coordFactors, normTable,
                                       norms);
-  } else {
+  } else if (numMust == 0) {
+    // At least one MUST_NOT and at least one SHOULD:
     hitCount = booleanQueryShouldMustNot(subs, liveDocsBytes, termScoreCache, termWeights,
                                          maxDoc, topN, numScorers, docBase, numMustNot, filled, docIDs, scores, coords,
                                          topScores, topDocIDs, coordFactors, normTable,
                                          norms, skips);
+  } else if (numMustNot == 0) {
+    // At least one MUST and zero or more SHOULD:
+    hitCount = booleanQueryShouldMust(subs, liveDocsBytes, termScoreCache, termWeights,
+                                      maxDoc, topN, numScorers, docBase, numMust, filled, docIDs, scores, coords,
+                                      topScores, topDocIDs, coordFactors, normTable,
+                                      norms);
+  } else {
+    // At least one MUST_NOT, at least one MUST and zero or more SHOULD:
+    hitCount = booleanQueryShouldMustMustNot(subs, liveDocsBytes, termScoreCache, termWeights,
+                                             maxDoc, topN, numScorers, docBase, numMust, numMustNot, filled, docIDs, scores, coords,
+                                             topScores, topDocIDs, coordFactors, normTable,
+                                             norms);
   }
 
   env->ReleasePrimitiveArrayCritical(jnorms, norms, JNI_ABORT);
@@ -773,4 +787,3 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
   env->ReleasePrimitiveArrayCritical(jtermStats, termStats, JNI_ABORT);
   env->ReleasePrimitiveArrayCritical(jbits, bits, JNI_ABORT);
 }
-
