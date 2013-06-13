@@ -31,7 +31,7 @@
 #include <stdlib.h> // malloc
 #include <string.h> // memcpy
 
-#include "PostingsState.h"
+#include "common.h"
 
 //static FILE *fp = fopen("logout.txt", "w");
 

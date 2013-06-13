@@ -16,7 +16,7 @@
  */
 #include <math.h>
 
-#include "PostingsState.h"
+#include "common.h"
 
 static int
 orFirstChunk(PostingsState *sub,

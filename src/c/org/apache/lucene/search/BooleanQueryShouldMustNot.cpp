@@ -16,7 +16,7 @@
  */
 #include <math.h>
 
-#include "PostingsState.h"
+#include "common.h"
 
 static void
 orMustNotChunk(PostingsState *sub,

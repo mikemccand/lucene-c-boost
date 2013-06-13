@@ -16,7 +16,7 @@
  */
 
 #include <byteswap.h>
-#include "PostingsState.h"
+#include "common.h"
 
 static unsigned char readByte(PostingsState *sub) {
   //printf("readByte p=%ld\n", sub->p);fflush(stdout);
