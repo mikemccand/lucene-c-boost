@@ -21,7 +21,7 @@ import StringIO
 
 MAX_SPECIALIZED_BITS_PER_VALUE = 24;
 PACKED_64_SINGLE_BLOCK_BPV = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 21, 32]
-OUTPUT_FILE = "src/c/org/apache/lucene/search/NativeSearch.cpp"
+OUTPUT_FILE = "src/c/org/apache/lucene/search/decode.cpp"
 
 def is_power_of_two(n):
   return n & (n - 1) == 0

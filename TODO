@@ -1,4 +1,18 @@
+structural diffs
+  - IntNRQ: stops collecting after first topN hits
+  - sending MUST_NOT to BS
+
+need to cherrypick which MUST queries are "appropriate" for BS1...
+
+get omitNorms working
+
 why is stddev not lower for C impls?
+
+hmm TermsFilter?
+
+hmm BooleanFilter?
+
+Filter via acceptDocs
 
 fix TermQuery !!  just do for loop over block size --> slower (strangely)
 
@@ -39,8 +53,6 @@ also BQ and?
 also BQ not terms?
 
 allow terms across different fields
-
-allow omit norms?
 
 make good random test
 

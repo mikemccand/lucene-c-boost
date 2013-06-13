@@ -76,17 +76,18 @@ JAVA_HOME = os.environ['JAVA_HOME']
 if not os.path.exists('dist'):
   os.makedirs('dist')
 genPacked = 'src/c/org/apache/lucene/search/gen_Packed.py'
-nativeSearch = 'src/c/org/apache/lucene/search/NativeSearch.cpp'
-if newer(genPacked, nativeSearch):
+decode = 'src/c/org/apache/lucene/search/decode.cpp'
+if newer(genPacked, decode):
   print('\nGenerated packed decode functions')
   run('%s %s' % (sys.executable, genPacked))
 
+nativeSearch = 'src/c/org/apache/lucene/search/NativeSearch.cpp'
 nativeSearchLib = 'dist/libNativeSearch.so'
-if newer(nativeSearch, nativeSearchLib):
+if newer([nativeSearch, decode], nativeSearchLib):
   # -ftree-vectorizer-verbose=3
   # -march=corei7
   print('\nCompile NativeSearch.cpp')
-  run('g++ -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (nativeSearchLib, JAVA_HOME, JAVA_HOME, nativeSearch))
+  run('g++ -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s %s' % (nativeSearchLib, JAVA_HOME, JAVA_HOME, nativeSearch, decode))
 
 mmapSource = 'src/c/org/apache/lucene/store/NativeMMapDirectory.cpp'
 mmapLib = 'dist/libNativeMMapDirectory.so'

@@ -745,9 +745,9 @@ public class NativeSearch {
           }
         }
 
-        // Sort by descending docFreq: we do this because
-        // the first scorer is handled separately (saves an
-        // if inside the inner loop):
+        // Sort in order of MUST_NOT, MUST, SHOULD,
+        // secondarily by docFreq descending (for MUST_NOT
+        // and SHOULD) and docFreq ascending (for MUST):
 
         // 4.4:
         /*
@@ -845,6 +845,13 @@ public class NativeSearch {
             }
           }
         }.mergeSort(0, scorers.size()-1);
+
+        /*
+        System.out.println("numMustNot=" + numMustNot);
+        for(int i=0;i<scorers.size();i++) {
+          System.out.println("  docFreqs[" + i + "]=" + docFreqs[i]);
+        }
+        */
         
         totalHits += searchSegmentBooleanQuery(topDocIDs,
                                                topScores,
