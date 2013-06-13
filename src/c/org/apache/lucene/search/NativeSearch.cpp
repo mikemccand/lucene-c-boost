@@ -115,11 +115,10 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
 
   if (jtopScores == 0) {
     scores = 0;
-    coords = 0;
   } else {
     scores = (float *) malloc(CHUNK * sizeof(float));
-    coords = (unsigned int *) malloc(CHUNK * sizeof(int));
   }
+  coords = (unsigned int *) malloc(CHUNK * sizeof(int));
 
   // Set to 1 by a MUST_NOT match:
   unsigned char *skips = (unsigned char *) calloc(CHUNK, sizeof(char));
@@ -270,6 +269,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   free(skips);
   if (scores != 0) {
     free(scores);
+  }
+  if (coords != 0) {
     free(coords);
   }
   free(freq1);

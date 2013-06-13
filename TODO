@@ -52,10 +52,6 @@ don't specialize decode above 24 bits?
 
 write simd?
 
-also BQ and?
-
-also BQ not terms?
-
 allow terms across different fields
 
 make good random test

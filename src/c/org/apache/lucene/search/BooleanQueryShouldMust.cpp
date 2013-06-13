@@ -41,6 +41,7 @@ orFirstChunk(PostingsState *sub,
   // First scorer is different because we know slot is
   // "new" for every hit:
   if (scores == 0) {
+    //printf("  no scores\n");
     while (nextDocID < endDoc) {
       //printf("  docID=%d\n", nextDocID);
       int slot = nextDocID & MASK;
@@ -61,7 +62,9 @@ orFirstChunk(PostingsState *sub,
       }
       nextDocID += docDeltas[++blockLastRead];
     }
+    //printf("  done\n");
   } else {
+    //printf("  has scores\n");
 
     //printf("scorers[0]\n");fflush(stdout);
     while (nextDocID < endDoc) {
@@ -337,7 +340,7 @@ int booleanQueryShouldMust(PostingsState* subs,
 
   while (docUpto < maxDoc) {
     register int endDoc = docUpto + CHUNK;
-    //printf("cycle endDoc=%d dels=%lx\n", endDoc, liveDocBytes);fflush(stdout);
+    //printf("cycle endDoc=%d\n", endDoc);fflush(stdout);
 
     int numFilled;
 
@@ -346,6 +349,7 @@ int booleanQueryShouldMust(PostingsState* subs,
     } else {
       numFilled = orFirstChunk(&subs[0], termScoreCache[0], termWeights[0], endDoc, filled, docIDs, scores, coords);
     }
+    //printf("  numFilled=%d\n", numFilled);
     for(int i=1;i<numMust;i++) {
       orMustChunk(&subs[i], termScoreCache[i], termWeights[i], endDoc, docIDs, scores, coords, i);
     }

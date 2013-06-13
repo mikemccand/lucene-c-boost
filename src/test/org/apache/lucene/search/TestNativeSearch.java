@@ -53,12 +53,14 @@ public class TestNativeSearch extends LuceneTestCase {
 
   private void assertSameHits(IndexSearcher s, Query q) throws IOException {
     // First with only top 10:
+    //System.out.println("TEST: q=" + q + " topN=10");
     TopDocs expected = s.search(q, 10);
     TopDocs actual = NativeSearch.searchNative(s, q, 10);
     assertSameHits(expected, actual);
     
     // First with only top 10:
     int maxDoc = s.getIndexReader().maxDoc();
+    //System.out.println("TEST: q=" + q + " topN=" + maxDoc);
     expected = s.search(q, maxDoc);
     actual = NativeSearch.searchNative(s, q, maxDoc);
     assertSameHits(expected, actual);
@@ -400,7 +402,7 @@ public class TestNativeSearch extends LuceneTestCase {
     dir.close();
   }
 
-  public void testBasicBooleanQuery3() throws Exception {
+  public void testVarious() throws Exception {
     File tmpDir = _TestUtil.getTempDir("nativesearch");
     Directory dir = new NativeMMapDirectory(tmpDir);
     IndexWriterConfig iwc = newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
@@ -435,55 +437,71 @@ public class TestNativeSearch extends LuceneTestCase {
     while(true) {
       
       //System.out.println("\nTEST: open reader");
-      IndexReader r = DirectoryReader.open(dir);
-      IndexSearcher s = new IndexSearcher(r);
+      DirectoryReader r1 = DirectoryReader.open(dir);
+      w = new IndexWriter(dir, iwc);
+      w.deleteDocuments(new Term("field", "e"));
+      w.close();
+      DirectoryReader r2 = DirectoryReader.openIfChanged(r1);
+      assertTrue(r2 != null);
+
+      IndexSearcher s1 = new IndexSearcher(r1);
+      IndexSearcher s2 = new IndexSearcher(r2);
 
       for(int i=0;i<10000;i++) {
         //if (i % 100 == 0) {
         //System.out.println("  " + i + "...");
         //}
-        BooleanQuery bq = new BooleanQuery();
-        bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
-        bq.add(new TermQuery(new Term("field", "b")), BooleanClause.Occur.SHOULD);
-        assertSameHits(s, bq);
 
-        assertSameHits(s, new ConstantScoreQuery(bq));
+        for(int d=0;d<2;d++) {
+          IndexSearcher s = d == 0 ? s1 : s2;
 
-        bq = new BooleanQuery();
-        bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
-        bq.add(new TermQuery(new Term("field", "c")), BooleanClause.Occur.SHOULD);
-        assertSameHits(s, bq);
+          assertSameHits(s, new TermQuery(new Term("field", "a")));
 
-        bq = new BooleanQuery();
-        bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
-        bq.add(new TermQuery(new Term("field", "d")), BooleanClause.Occur.SHOULD);
-        assertSameHits(s, bq);
+          for(int j=1;j<6;j++) {
+            String other = String.valueOf((char) (97+j));
+            BooleanQuery bq = new BooleanQuery();
+            bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
+            bq.add(new TermQuery(new Term("field", other)), BooleanClause.Occur.SHOULD);
+            assertSameHits(s, bq);
+            assertSameHits(s, new ConstantScoreQuery(bq));
 
-        bq = new BooleanQuery();
-        bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
-        bq.add(new TermQuery(new Term("field", "e")), BooleanClause.Occur.SHOULD);
-        assertSameHits(s, bq);
+            bq = new BooleanQuery();
+            bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
+            bq.add(new TermQuery(new Term("field", other)), BooleanClause.Occur.MUST);
+            assertSameHits(s, bq);
+            assertSameHits(s, new ConstantScoreQuery(bq));
 
-        bq = new BooleanQuery();
-        bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
-        bq.add(new TermQuery(new Term("field", "f")), BooleanClause.Occur.SHOULD);
-        assertSameHits(s, bq);
+            bq = new BooleanQuery();
+            bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.MUST);
+            bq.add(new TermQuery(new Term("field", other)), BooleanClause.Occur.SHOULD);
+            assertSameHits(s, bq);
+            assertSameHits(s, new ConstantScoreQuery(bq));
 
-        assertSameHits(s, new TermQuery(new Term("field", "a")));
-        assertSameHits(s, new TermQuery(new Term("field", "b")));
-        assertSameHits(s, new TermQuery(new Term("field", "c")));
-        assertSameHits(s, new TermQuery(new Term("field", "d")));
-        assertSameHits(s, new TermQuery(new Term("field", "e")));
-        assertSameHits(s, new TermQuery(new Term("field", "f")));
+            bq = new BooleanQuery();
+            bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
+            bq.add(new TermQuery(new Term("field", other)), BooleanClause.Occur.MUST_NOT);
+            assertSameHits(s, bq);
+            assertSameHits(s, new ConstantScoreQuery(bq));
 
-        assertSameHits(s, new ConstantScoreQuery(new TermQuery(new Term("field", "a"))));
+            bq = new BooleanQuery();
+            bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.MUST_NOT);
+            bq.add(new TermQuery(new Term("field", other)), BooleanClause.Occur.SHOULD);
+            assertSameHits(s, bq);
+            assertSameHits(s, new ConstantScoreQuery(bq));
+
+            assertSameHits(s, new TermQuery(new Term("field", other)));
+          }
+
+          assertSameHits(s, new ConstantScoreQuery(new TermQuery(new Term("field", "a"))));
+        }
         // comment out to test for mem leaks:
         break;
       }
 
       //System.out.println("\nTEST: close reader");
 
-      r.close();
+      r1.close();
+      r2.close();
       // comment out to test for mem leaks:
       break;
     }
