@@ -124,7 +124,7 @@ if __name__ == '__main__':
 
   f.write('''
 
-static void readPackedBlock(unsigned long *longBuffer, PostingsState *sub, unsigned int *dest) {
+static void readPackedBlock(PostingsState *sub, unsigned int *dest) {
   unsigned char bitsPerValue = readByte(sub);
   //printf("\\nreadPackedBlock bpv=%d\\n", bitsPerValue);
   if (bitsPerValue == 0) {
@@ -141,8 +141,7 @@ static void readPackedBlock(unsigned long *longBuffer, PostingsState *sub, unsig
     //x = (x+7) & ~7;
     //sub->p = (unsigned char *) x;
 
-    //memcpy(longBuffer, sub->p, numBytes);
-    longBuffer = (unsigned long *) sub->p;
+    unsigned long *longBuffer = (unsigned long *) sub->p;
     sub->p += numBytes;
 
     // NOTE: Block PF uses PACKED_SINGLE_BLOCK for

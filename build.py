@@ -81,13 +81,17 @@ if newer(genPacked, decode):
   print('\nGenerated packed decode functions')
   run('%s %s' % (sys.executable, genPacked))
 
-nativeSearch = 'src/c/org/apache/lucene/search/NativeSearch.cpp'
+cSources = [decode,
+            'src/c/org/apache/lucene/search/NativeSearch.cpp',
+            'src/c/org/apache/lucene/search/BooleanQueryOnlyShould.cpp',
+            'src/c/org/apache/lucene/search/BooleanQueryShouldMustNot.cpp']
+
 nativeSearchLib = 'dist/libNativeSearch.so'
-if newer([nativeSearch, decode], nativeSearchLib):
+if newer(cSources, nativeSearchLib):
   # -ftree-vectorizer-verbose=3
   # -march=corei7
   print('\nCompile NativeSearch.cpp')
-  run('g++ -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s %s' % (nativeSearchLib, JAVA_HOME, JAVA_HOME, nativeSearch, decode))
+  run('g++ -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (nativeSearchLib, JAVA_HOME, JAVA_HOME, ' '.join(cSources)))
 
 mmapSource = 'src/c/org/apache/lucene/store/NativeMMapDirectory.cpp'
 mmapLib = 'dist/libNativeMMapDirectory.so'

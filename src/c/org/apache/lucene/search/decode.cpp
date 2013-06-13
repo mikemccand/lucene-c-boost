@@ -2204,7 +2204,7 @@ static void decode31(unsigned long *blocks, unsigned int *values) {
 }
 
 
-static void readPackedBlock(unsigned long *longBuffer, PostingsState *sub, unsigned int *dest) {
+static void readPackedBlock(PostingsState *sub, unsigned int *dest) {
   unsigned char bitsPerValue = readByte(sub);
   //printf("\nreadPackedBlock bpv=%d\n", bitsPerValue);
   if (bitsPerValue == 0) {
@@ -2221,8 +2221,7 @@ static void readPackedBlock(unsigned long *longBuffer, PostingsState *sub, unsig
     //x = (x+7) & ~7;
     //sub->p = (unsigned char *) x;
 
-    //memcpy(longBuffer, sub->p, numBytes);
-    longBuffer = (unsigned long *) sub->p;
+    unsigned long *longBuffer = (unsigned long *) sub->p;
     sub->p += numBytes;
 
     // NOTE: Block PF uses PACKED_SINGLE_BLOCK for
@@ -2369,16 +2368,16 @@ static void readVIntBlock(PostingsState *sub) {
   }
 }
 
-void nextBlock(unsigned long *longBuffer, PostingsState* sub) {
+void nextBlock(PostingsState* sub) {
   sub->blockLastRead = -1;
   if (sub->docsLeft >= BLOCK_SIZE) {
     //printf("  nextBlock: packed\n");
-    readPackedBlock(longBuffer, sub, sub->docDeltas);
+    readPackedBlock(sub, sub->docDeltas);
     if (!sub->docsOnly) {
       if (sub->freqs == 0) {
         skipPackedBlock(sub);
       } else {
-        readPackedBlock(longBuffer, sub, sub->freqs);
+        readPackedBlock(sub, sub->freqs);
       }
     }
     sub->docsLeft -= BLOCK_SIZE;
@@ -2390,4 +2389,76 @@ void nextBlock(unsigned long *longBuffer, PostingsState* sub) {
     readVIntBlock(sub);
     sub->docsLeft = 0;
   }
+}
+
+static bool
+lessThan(int docID1, float score1, int docID2, float score2) {
+  if (score1 < score2) {
+    return true;
+  } else if (score1 > score2) {
+    return false;
+  } else {
+    if (docID1 > docID2) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+}
+
+void
+downHeap(int heapSize, int *topDocIDs, float *topScores) {
+  int i = 1;
+  // save top node
+  int savDocID = topDocIDs[i];
+  float savScore = topScores[i];
+  int j = i << 1;            // find smaller child
+  int k = j + 1;
+  if (k <= heapSize && lessThan(topDocIDs[k], topScores[k], topDocIDs[j], topScores[j])) {
+    j = k;
+  }
+  while (j <= heapSize && lessThan(topDocIDs[j], topScores[j], savDocID, savScore)) {
+    // shift up child
+    topDocIDs[i] = topDocIDs[j];
+    topScores[i] = topScores[j];
+    i = j;
+    j = i << 1;
+    k = j + 1;
+    if (k <= heapSize && lessThan(topDocIDs[k], topScores[k], topDocIDs[j], topScores[j])) {
+      j = k;
+    }
+  }
+  // install saved node
+  topDocIDs[i] = savDocID;
+  topScores[i] = savScore;
+}
+
+void
+downHeapNoScores(int heapSize, int *topDocIDs) {
+  int i = 1;
+  // save top node
+  int savDocID = topDocIDs[i];
+  int j = i << 1;            // find smaller child
+  int k = j + 1;
+  if (k <= heapSize && topDocIDs[k] > topDocIDs[j]) {
+    j = k;
+  }
+  while (j <= heapSize && topDocIDs[j] > savDocID) {
+    // shift up child
+    topDocIDs[i] = topDocIDs[j];
+    i = j;
+    j = i << 1;
+    k = j + 1;
+    if (k <= heapSize && topDocIDs[k] > topDocIDs[j]) {
+      j = k;
+    }
+  }
+  // install saved node
+  topDocIDs[i] = savDocID;
+}
+
+bool isSet(unsigned char *bits, unsigned int docID) {
+  bool x = (bits[docID >> 3] & (1 << (docID & 7))) != 0;
+  //fprintf(fp, "isSet docID=%d ret=%d\n", docID, x);fflush(fp);
+  return x;
 }
