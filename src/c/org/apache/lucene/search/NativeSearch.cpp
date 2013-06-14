@@ -108,60 +108,129 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   // Clauses come in sorted MUST_NOT (docFreq descending),
   // MUST (docFreq ascending), SHOULD (docFreq descending)
 
-  unsigned long __attribute__ ((aligned(16))) longBuffer[64]; 
-
   //printf("START search\n"); fflush(stdout);
 
-  float *scores;
-  unsigned int *coords;
+  float *scores = 0;
+  int *docIDs = 0;
+  unsigned int *coords = 0;
+  bool failed = false;
+  unsigned char *skips = 0;
+  PostingsState *subs = 0;
+  int *singletonDocIDs = 0;
+  long *totalTermFreqs = 0;
+  long *docTermStartFPs = 0;
+  int *docFreqs;
+  float *termWeights = 0;
+  float *coordFactors = 0;
+  unsigned char *liveDocsBytes = 0;
+  unsigned char* norms = 0;
+  float *normTable = 0;
+  int *topDocIDs = 0;
+  float *topScores = 0;
+  unsigned int *filled = 0;
+  double **termScoreCache = 0;
+  unsigned char isCopy = 0;
+  int numScorers;
+  int topN;
 
   if (jtopScores == 0) {
     scores = 0;
   } else {
     scores = (float *) malloc(CHUNK * sizeof(float));
+    if (scores == 0) {
+      failed = true;
+      goto end;
+    }
   }
   coords = (unsigned int *) malloc(CHUNK * sizeof(int));
+  if (coords == 0) {
+    failed = true;
+    goto end;
+  }
 
   // Set to 1 by a MUST_NOT match:
-  unsigned char *skips = (unsigned char *) calloc(CHUNK, sizeof(char));
+  skips = (unsigned char *) calloc(CHUNK, sizeof(char));
+  if (skips == 0) {
+    failed = true;
+    goto end;
+  }
 
-  int *docIDs = (int *) malloc(CHUNK * sizeof(int));
-
+  docIDs = (int *) malloc(CHUNK * sizeof(int));
+  if (docIDs == 0) {
+    failed = true;
+    goto end;
+  }
   for(int i=0;i<CHUNK;i++) {
     docIDs[i] = -1;
   }
 
-  int numScorers = env->GetArrayLength(jdocFreqs);
+  numScorers = env->GetArrayLength(jdocFreqs);
 
-  int topN = env->GetArrayLength(jtopDocIDs) - 1;
+  topN = env->GetArrayLength(jtopDocIDs) - 1;
   //printf("topN=%d\n", topN);
 
-  PostingsState *subs = (PostingsState *) malloc(numScorers*sizeof(PostingsState));
+  subs = (PostingsState *) calloc(numScorers, sizeof(PostingsState));
+  if (subs == 0) {
+    failed = true;
+    goto end;
+  }
+  singletonDocIDs = env->GetIntArrayElements(jsingletonDocIDs, 0);
+  if (singletonDocIDs == 0) {
+    failed = true;
+    goto end;
+  }
+  totalTermFreqs = env->GetLongArrayElements(jtotalTermFreqs, 0);
+  if (totalTermFreqs == 0) {
+    failed = true;
+    goto end;
+  }
+  docTermStartFPs = env->GetLongArrayElements(jdocTermStartFPs, 0);
+  if (docTermStartFPs == 0) {
+    failed = true;
+    goto end;
+  }
+  docFreqs = env->GetIntArrayElements(jdocFreqs, 0);
+  if (docFreqs == 0) {
+    failed = true;
+    goto end;
+  }
+  termWeights = (float *) env->GetFloatArrayElements(jtermWeights, 0);
+  if (termWeights == 0) {
+    failed = true;
+    goto end;
+  }
+  coordFactors = (float *) env->GetFloatArrayElements(jcoordFactors, 0);
+  if (coordFactors == 0) {
+    failed = true;
+    goto end;
+  }
 
-  int *singletonDocIDs = env->GetIntArrayElements(jsingletonDocIDs, 0);
-  long *totalTermFreqs = env->GetLongArrayElements(jtotalTermFreqs, 0);
-  long *docTermStartFPs = env->GetLongArrayElements(jdocTermStartFPs, 0);
-  int *docFreqs = env->GetIntArrayElements(jdocFreqs, 0);
-  float *termWeights = (float *) env->GetFloatArrayElements(jtermWeights, 0);
-  float *coordFactors = (float *) env->GetFloatArrayElements(jcoordFactors, 0);
-
-  unsigned char isCopy = 0;
-  unsigned char *liveDocsBytes;
+  liveDocsBytes;
   if (jliveDocsBytes == 0) {
     liveDocsBytes = 0;
   } else {
     liveDocsBytes = (unsigned char *) env->GetPrimitiveArrayCritical(jliveDocsBytes, &isCopy);
+    if (liveDocsBytes == 0) {
+      failed = true;
+      goto end;
+    }
     //printf("liveDocs isCopy=%d\n", isCopy);fflush(stdout);
   }
 
   isCopy = 0;
-  unsigned char* norms = (unsigned char *) env->GetPrimitiveArrayCritical(jnorms, &isCopy);
-  //printf("norms isCopy=%d\n", isCopy);fflush(stdout);
+  norms = (unsigned char *) env->GetPrimitiveArrayCritical(jnorms, &isCopy);
+  if (norms == 0) {
+    failed = true;
+    goto end;
+  }
 
   isCopy = 0;
-  float *normTable = (float *) env->GetPrimitiveArrayCritical(jnormTable, &isCopy);
-  //printf("normTable %lx isCopy=%d\n", normTable, isCopy);fflush(stdout);
-  // Init scorers:
+  normTable = (float *) env->GetPrimitiveArrayCritical(jnormTable, &isCopy);
+  if (normTable == 0) {
+    failed = true;
+    goto end;
+  }
+
   for(int i=0;i<numScorers;i++) {
     PostingsState *sub = &(subs[i]);
     sub->docsOnly = false;
@@ -176,15 +245,28 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
       sub->blockEnd = 0;
       sub->docDeltas = 0;
       sub->freqs = (unsigned int *) malloc(sizeof(int));
+      if (sub->freqs == 0) {
+        failed = true;
+        goto end;
+      }
       sub->freqs[0] = (int) totalTermFreqs[i];
     } else {
       sub->docsLeft = docFreqs[i];
       if (scores != 0 && i >= numMustNot) {
         sub->docDeltas = (unsigned int *) malloc(2*BLOCK_SIZE*sizeof(int));
+        if (sub->docDeltas == 0) {
+          failed = true;
+          goto end;
+        }
         // Locality seemed to help here:
         sub->freqs = sub->docDeltas + BLOCK_SIZE;
       } else {
         sub->docDeltas = (unsigned int *) malloc(BLOCK_SIZE*sizeof(int));
+        if (sub->docDeltas == 0) {
+          failed = true;
+          goto end;
+        }
+
         sub->freqs = 0;
       }
       //printf("docFileAddress=%ld startFP=%ld\n", docFileAddress, docTermStartFPs[i]);fflush(stdout);
@@ -199,19 +281,39 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   }
 
   // PQ holding top hits:
-  int *topDocIDs = (int *) env->GetIntArrayElements(jtopDocIDs, 0);
-  float *topScores;
+  topDocIDs = (int *) env->GetIntArrayElements(jtopDocIDs, 0);
+  if (topDocIDs == 0) {
+    failed = true;
+    goto end;
+  }
+
   if (jtopScores != 0) {
     topScores = (float *) env->GetFloatArrayElements(jtopScores, 0);
+    if (topScores == 0) {
+      failed = true;
+      goto end;
+    }
   } else {
     topScores = 0;
   }
 
-  unsigned int *filled = (unsigned int *) malloc(CHUNK * sizeof(int));
+  filled = (unsigned int *) malloc(CHUNK * sizeof(int));
+  if (filled == 0) {
+    failed = true;
+    goto end;
+  }
 
-  double **termScoreCache = (double **) malloc(numScorers*sizeof(double*));
+  termScoreCache = (double **) calloc(numScorers, sizeof(double*));
+  if (termScoreCache == 0) {
+    failed = true;
+    goto end;
+  }
   for(int i=0;i<numScorers;i++) {
     termScoreCache[i] = (double *) malloc(TERM_SCORES_CACHE_SIZE*sizeof(double));
+    if (termScoreCache[i] == 0) {
+      failed = true;
+      goto end;
+    }
     for(int j=0;j<TERM_SCORES_CACHE_SIZE;j++) {
       termScoreCache[i][j] = termWeights[i] * sqrt(j);
     }
@@ -245,48 +347,82 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
                                              norms);
   }
 
-  env->ReleasePrimitiveArrayCritical(jnorms, norms, JNI_ABORT);
-  if (jliveDocsBytes != 0) {
+ end:
+
+  if (norms != 0) {
+    env->ReleasePrimitiveArrayCritical(jnorms, norms, JNI_ABORT);
+  }
+  if (liveDocsBytes != 0) {
     env->ReleasePrimitiveArrayCritical(jliveDocsBytes, liveDocsBytes, JNI_ABORT);
   }
-  env->ReleasePrimitiveArrayCritical(jnormTable, normTable, JNI_ABORT);
-
-  env->ReleaseIntArrayElements(jsingletonDocIDs, singletonDocIDs, JNI_ABORT);
-  env->ReleaseLongArrayElements(jtotalTermFreqs, totalTermFreqs, JNI_ABORT);
-  env->ReleaseLongArrayElements(jdocTermStartFPs, docTermStartFPs, JNI_ABORT);
-  env->ReleaseIntArrayElements(jdocFreqs, docFreqs, JNI_ABORT);
-  env->ReleaseFloatArrayElements(jtermWeights, termWeights, JNI_ABORT);
-  env->ReleaseFloatArrayElements(jcoordFactors, coordFactors, JNI_ABORT);
-
-  env->ReleaseIntArrayElements(jtopDocIDs, topDocIDs, 0);
-  if (jtopScores != 0) {
+  if (normTable != 0) {
+    env->ReleasePrimitiveArrayCritical(jnormTable, normTable, JNI_ABORT);
+  }
+  if (singletonDocIDs != 0) {
+    env->ReleaseIntArrayElements(jsingletonDocIDs, singletonDocIDs, JNI_ABORT);
+  }
+  if (totalTermFreqs != 0) {
+    env->ReleaseLongArrayElements(jtotalTermFreqs, totalTermFreqs, JNI_ABORT);
+  }
+  if (docTermStartFPs != 0) {
+    env->ReleaseLongArrayElements(jdocTermStartFPs, docTermStartFPs, JNI_ABORT);
+  }
+  if (docFreqs != 0) {
+    env->ReleaseIntArrayElements(jdocFreqs, docFreqs, JNI_ABORT);
+  }
+  if (termWeights != 0) {
+    env->ReleaseFloatArrayElements(jtermWeights, termWeights, JNI_ABORT);
+  }
+  if (coordFactors != 0) {
+    env->ReleaseFloatArrayElements(jcoordFactors, coordFactors, JNI_ABORT);
+  }
+  if (topDocIDs != 0) {
+    env->ReleaseIntArrayElements(jtopDocIDs, topDocIDs, 0);
+  }
+  if (topScores != 0) {
     env->ReleaseFloatArrayElements(jtopScores, topScores, 0);
   }
-
-  for(int i=0;i<numScorers;i++) {
-    free(termScoreCache[i]);
+  if (termScoreCache != 0) {
+    for(int i=0;i<numScorers;i++) {
+      if (termScoreCache[i] != 0) {
+        free(termScoreCache[i]);
+      }
+    }
+    free(termScoreCache);
   }
-  free(termScoreCache);
-  free(filled);
-  free(docIDs);
-  free(skips);
+  if (filled != 0) {
+    free(filled);
+  }
+  if (docIDs != 0) {
+    free(docIDs);
+  }
+  if (skips != 0) {
+    free(skips);
+  }
   if (scores != 0) {
     free(scores);
   }
   if (coords != 0) {
     free(coords);
   }
-  for(int i=0;i<numScorers;i++) {
-    PostingsState *sub = &(subs[i]);
-    if (sub->docDeltas != 0) {
-      free(sub->docDeltas);
-    } else if (sub->freqs != 0) {
-      free(sub->freqs);
+  if (subs != 0) {
+    for(int i=0;i<numScorers;i++) {
+      PostingsState *sub = &(subs[i]);
+      if (sub->docDeltas != 0) {
+        free(sub->docDeltas);
+      } else if (sub->freqs != 0) {
+        free(sub->freqs);
+      }
     }
+
+    free(subs);
   }
 
-  free(subs);
-
+  if (failed) {
+    jclass c = env->FindClass("java/lang/OutOfMemoryError");
+    env->ThrowNew(c, "failed to allocate temporary memory");
+    return -1;
+  }
   return hitCount;
 }
 
@@ -790,7 +926,8 @@ end:
 
   if (failed) {
     jclass c = env->FindClass("java/lang/OutOfMemoryError");
-    return env->ThrowNew(c, "failed to allocate temporary memory");
+    env->ThrowNew(c, "failed to allocate temporary memory");
+    return -1;
   }
 
   return totalHits;
