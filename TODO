@@ -2,6 +2,18 @@ structural diffs
   - IntNRQ: stops collecting after first topN hits
   - sending MUST_NOT to BS
 
+cache more reflection fields/methods!
+
+must pass totalTF for all other places that use singleDocID
+
+don't pull DocsEnum?  can't i get at the docIn separately?
+
+add DOCS_ONLY TermQuery test
+
+silly: TermQuery does not need to tie break on docID in its collect
+
+why does TermRangeQuery not work?
+
 run all Lucene tests again
 
 convert live docs -> FixedBitSet?  so i can share code w/ filter ...

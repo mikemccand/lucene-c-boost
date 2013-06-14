@@ -125,3 +125,6 @@ int booleanQueryShouldMustMustNot(PostingsState* subs,
                                   register unsigned char *norms);
 
 bool isSet(unsigned char *bits, unsigned int docID);
+
+#define printf NO
+#define fflush NO

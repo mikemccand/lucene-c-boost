@@ -632,6 +632,9 @@ public class TestNativeSearch extends LuceneTestCase {
       }
       doc.add(new TextField("field", s, Field.Store.NO));
       w.addDocument(doc);
+      if (random().nextInt(30) == 17) {
+        w.deleteDocuments(new Term("field", s));
+      }
     }
 
     IndexReader r = DirectoryReader.open(w, true);

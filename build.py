@@ -113,27 +113,28 @@ if not os.path.exists('build/classes/test'):
 
 run('javac -d build/classes/test -cp %s:dist/luceneCBoost.jar src/test/org/apache/lucene/search/*.java' % toClassPath(DEPS + TEST_DEPS))
 
-print('\nRun tests')
-if not os.path.exists('build/test'):
-  os.makedirs('build/test')
+if True:
+  print('\nRun tests')
+  if not os.path.exists('build/test'):
+    os.makedirs('build/test')
 
-command = 'export LD_LIBRARY_PATH=%s/dist; java -Xmx128m -ea' % os.getcwd()
-command += ' -cp %s:build/classes/test:dist/luceneCBoost.jar' % toClassPath(DEPS + TEST_DEPS)
-command += ' -DtempDir=build/test'
-command += ' -Dtests.codec=Lucene42'
-command += ' -Dtests.directory=NativeMMapDirectory'
-command += ' -Dtests.seed=0'
-if len(sys.argv) != 1:
-  command += ' -Dtests.method=%s' % sys.argv[1]
-command += ' org.junit.runner.JUnitCore'
-command += ' org.apache.lucene.search.TestNativeSearch'
-p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+  command = 'export LD_LIBRARY_PATH=%s/dist; java -Xmx128m -ea' % os.getcwd()
+  command += ' -cp %s:build/classes/test:dist/luceneCBoost.jar' % toClassPath(DEPS + TEST_DEPS)
+  command += ' -DtempDir=build/test'
+  command += ' -Dtests.codec=Lucene42'
+  command += ' -Dtests.directory=NativeMMapDirectory'
+  command += ' -Dtests.seed=0'
+  if len(sys.argv) != 1:
+    command += ' -Dtests.method=%s' % sys.argv[1]
+  command += ' org.junit.runner.JUnitCore'
+  command += ' org.apache.lucene.search.TestNativeSearch'
+  p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
-while True:
-  s = p.stdout.readline()
-  if s == b'':
-    break
-  print(s.decode('utf-8').rstrip())
-p.wait()
-if p.returncode != 0:
-  raise RuntimeError('test failed')
+  while True:
+    s = p.stdout.readline()
+    if s == b'':
+      break
+    print(s.decode('utf-8').rstrip())
+  p.wait()
+  if p.returncode != 0:
+    raise RuntimeError('test failed')

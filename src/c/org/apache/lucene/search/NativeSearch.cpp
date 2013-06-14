@@ -23,7 +23,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-//#include <unistd.h>
+#include <unistd.h>
 #include <sys/mman.h>
 #include <errno.h>
 #include <jni.h>
@@ -306,6 +306,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
    // Current segment's liveDocs, or null:
    jbyteArray jliveDocBytes,
 
+   jboolean docsOnly,
+
    // weightValue from each TermWeight:
    jfloat termWeight,
 
@@ -319,6 +321,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
    // If the term has only one docID in this segment (it was
    // "pulsed") then its set here, else -1:
    jint singletonDocID,
+
+   jlong totalTermFreq,
 
    // docFreq of each term
    jint docFreq,
@@ -361,11 +365,36 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
     topScores = (float *) env->GetFloatArrayElements(jtopScores, 0);
   }
 
+  register double *termScoreCache = (double *) malloc(TERM_SCORES_CACHE_SIZE*sizeof(double));
+  for(int j=0;j<TERM_SCORES_CACHE_SIZE;j++) {
+    termScoreCache[j] = termWeight * sqrt(j);
+  }
+
   if (singletonDocID != -1) {
     if (liveDocBytes == 0 || isSet(liveDocBytes, singletonDocID)) {
-      topDocIDs[1] = singletonDocID;
+      int docID = docBase + singletonDocID;
       if (jtopScores != 0) {
-        topScores[1] = termWeight * sqrt(1) * normTable[norms[singletonDocID]];
+        float score;
+        if (totalTermFreq < TERM_SCORES_CACHE_SIZE) {
+          score = termScoreCache[totalTermFreq];
+        } else {
+          score = sqrt(totalTermFreq) * termWeight;
+        }
+        score *= normTable[norms[singletonDocID]];
+        if (score > topScores[1]) {
+          topScores[1] = score;
+          topDocIDs[1] = docID;
+          //printf("singleton docID=%d ttf=%d termWeight=%.5f score=%.7f\n", singletonDocID, totalTermFreq, termWeight, topScores[1]);fflush(stdout);
+          downHeap(topN, topDocIDs, topScores);
+        } else {
+          //printf("skip singleton docID=%d termWeight=%.5f score=%.7f\n", singletonDocID, termWeight, topScores[1]);fflush(stdout);
+        }
+      } else if (docID < topDocIDs[1]) {
+        //printf("singleton docID=%d no score\n", singletonDocID);fflush(stdout);
+        topDocIDs[1] = docID;
+        downHeapNoScores(topN, topDocIDs);
+      } else {
+        //printf("skip singleton docID=%d no score\n", singletonDocID);fflush(stdout);
       }
       totalHits = 1;
     }
@@ -389,11 +418,6 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
     //printf("docFileAddress=%ld startFP=%ld\n", docFileAddress, docTermStartFPs[i]);fflush(stdout);
     sub->p = ((unsigned char *) docFileAddress) + docTermStartFP;
     int hitCount = 0;
-
-    register double *termScoreCache = (double *) malloc(TERM_SCORES_CACHE_SIZE*sizeof(double));
-    for(int j=0;j<TERM_SCORES_CACHE_SIZE;j++) {
-      termScoreCache[j] = termWeight * sqrt(j);
-    }
 
     register int nextDocID = 0;
     register unsigned int *docDeltas = sub->docDeltas;
@@ -517,7 +541,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
 #else
 
     PostingsState *sub = (PostingsState *) malloc(sizeof(PostingsState));
-    sub->docsOnly = false;
+    sub->docsOnly = (bool) docsOnly;
     sub->docsLeft = docFreq;
     // Locality seemed to help here:
     if (jtopScores != 0) {
@@ -534,11 +558,6 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
     sub->nextDocID = sub->docDeltas[0];
     //printf("docDeltas[0]=%d\n", sub->docDeltas[0]);
     sub->blockLastRead = 0;
-
-    register double *termScoreCache = (double *) malloc(TERM_SCORES_CACHE_SIZE*sizeof(double));
-    for(int j=0;j<TERM_SCORES_CACHE_SIZE;j++) {
-      termScoreCache[j] = termWeight * sqrt(j);
-    }
 
     register int nextDocID = sub->nextDocID;
     register unsigned int *docDeltas = sub->docDeltas;
@@ -594,7 +613,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
 
             int docID = docBase + nextDocID;
 
-            if (score > topScores[1] || (score == topScores[1] && docID < topDocIDs[1])) {
+            //if (score > topScores[1] || (score == topScores[1] && docID < topDocIDs[1])) {
+            if (score > topScores[1]) {
               // Hit is competitive   
               topDocIDs[1] = docID;
               topScores[1] = score;
@@ -665,7 +685,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
 
           int docID = docBase + nextDocID;
 
-          if (score > topScores[1] || (score == topScores[1] && docID < topDocIDs[1])) {
+          //if (score > topScores[1] || (score == topScores[1] && docID < topDocIDs[1])) {
+          if (score > topScores[1]) {
             // Hit is competitive   
             topDocIDs[1] = docID;
             topScores[1] = score;
@@ -690,6 +711,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
       }
 
       totalHits = docFreq;
+      //printf("return totalHits=%d\n", docFreq);
     }
 #endif
 
@@ -768,7 +790,9 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
       } else {
         for(int j=0;j<limit;j++) {
           nextDocID += docDeltas[j];
-          setLongBit(bits, nextDocID);
+          if (isSet(liveDocsBytes, nextDocID)) {
+            setLongBit(bits, nextDocID);
+          }
         }
       }
       if (sub->docsLeft == 0) {

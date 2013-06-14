@@ -131,6 +131,8 @@ public class NativeSearch {
 
       // Current segment's liveDocs, or null:
       byte[] liveDocsBytes,
+
+      boolean docsOnly,
       
       // weightValue for this TermQuery's TermWeight
       float termWeight,
@@ -144,6 +146,8 @@ public class NativeSearch {
 
       // If the term has only one docID in this segment (it was "pulsed") then its set here, else -1:
       int singletonDocID,
+
+      long totalTermFreq,
 
       // docFreq
       int docFreq,
@@ -169,6 +173,7 @@ public class NativeSearch {
    *  possible, but otherwise falling back on
    *  IndexSearcher. */
   public static TopDocs search(IndexSearcher searcher, Query query, int topN) throws IOException {
+    //System.out.println("NATIVE: query in: " + query);
     query = searcher.rewrite(query);
     //System.out.println("NATIVE: after rewrite: " + query);
 
@@ -264,14 +269,17 @@ public class NativeSearch {
       if (other != null) {
         constantScore = csq.getBoost();
         query = other;
-        //System.out.println("unwrap csq " + query);
+        //System.out.println("unwrap csq to " + query.getClass());
       } else {
         Filter f = csq.getFilter();
         if (f instanceof MultiTermQueryWrapperFilter) {
+          //System.out.println("NATIVE: mtq filter " + f);
           return _searchMTQFilter(searcher, (MultiTermQueryWrapperFilter) f, topN, csq.getBoost());
         }
       }
     }
+
+    // System.out.println("NATIVE: search " + query);
 
     if (query instanceof TermQuery) {
       return _searchTermQuery(searcher, (TermQuery) query, topN, constantScore);
@@ -283,6 +291,7 @@ public class NativeSearch {
   }
 
   private static TopDocs _searchMTQFilter(IndexSearcher searcher, MultiTermQueryWrapperFilter filter, int topN, float constantScore) throws IOException {
+    //System.out.println("MTQ search");
     List<AtomicReaderContext> leaves = searcher.getIndexReader().leaves();
     Similarity sim = searcher.getSimilarity();
 
@@ -336,11 +345,15 @@ public class NativeSearch {
           BlockTermState termState = getTermState(wrappedTermsEnum);
           if (termState.docFreq == 1) {
             // Pulsed
-            bitSet.set(getSingletonDocID(termState));
+            int docID = getSingletonDocID(termState);
+            if (state.liveDocs == null || state.liveDocs.get(docID)) {
+              bitSet.set(docID);
+              //System.out.println("term: " + termsEnum.term() + " pulsed: docID=" + docID);
+            }
           } else {
             termStats.add((long) termState.docFreq);
             termStats.add(getDocTermStartFP(termState));
-            //System.out.println("term: " + termsEnum.term().utf8ToString() + " docFreq=" + termState.docFreq + " startFP=" + getDocTermStartFP(termState));
+            //System.out.println("term: " + termsEnum.term() + " docFreq=" + termState.docFreq + " startFP=" + getDocTermStartFP(termState));
           }
         } while (termsEnum.next() != null);
       } else if (blockTreeIntersectEnum.isInstance(termsEnum)) {
@@ -348,7 +361,10 @@ public class NativeSearch {
           BlockTermState termState = getIntersectTermState(termsEnum);
           if (termState.docFreq == 1) {
             // Pulsed
-            bitSet.set(getSingletonDocID(termState));
+            int docID = getSingletonDocID(termState);
+            if (state.liveDocs == null || state.liveDocs.get(docID)) {
+              bitSet.set(docID);
+            }
           } else {
             termStats.add((long) termState.docFreq);
             termStats.add(getDocTermStartFP(termState));
@@ -366,7 +382,7 @@ public class NativeSearch {
           termStatsArray[i] = termStats.get(i);
         }
         IndexInput docIn = getDocIn(docsEnum);
-        //System.out.println(termStatsArray.length + " terms");
+        //System.out.println(termStatsArray.length + " terms to MTQ");
         fillMultiTermFilter(bitSetBits, state.liveDocsBytes, getMMapAddress(docIn), termStatsArray, state.docsOnly);
       }
 
@@ -377,6 +393,9 @@ public class NativeSearch {
             //System.out.println("collect docID=" + ctx.docBase + " + " + docID);
             scoreDocs.add(new ScoreDoc(ctx.docBase + docID, constantScore));
             if (scoreDocs.size() == topN) {
+              break;
+            }
+            if (docID == state.maxDoc-1) {
               break;
             }
             docID = bitSet.nextSetBit(docID+1);
@@ -395,7 +414,7 @@ public class NativeSearch {
       */
     }
 
-    return new TopDocs(totalHits, scoreDocs.toArray(new ScoreDoc[scoreDocs.size()]), constantScore);
+    return new TopDocs(totalHits, scoreDocs.toArray(new ScoreDoc[scoreDocs.size()]), scoreDocs.isEmpty() ? Float.NaN : constantScore);
   }
 
   static final Field blockTermStateDocStartFPField;
@@ -515,6 +534,8 @@ public class NativeSearch {
   private static TopDocs _searchTermQuery(IndexSearcher searcher, TermQuery query, int topN, float constantScore) throws IOException {
 
     List<AtomicReaderContext> leaves = searcher.getIndexReader().leaves();
+    //System.out.println("_searchTermQuery: " + leaves.size() + " segments; query=" + query);
+    //new Throwable().printStackTrace(System.out);
     Similarity sim = searcher.getSimilarity();
 
     if (!(sim instanceof DefaultSimilarity)) {
@@ -545,6 +566,7 @@ public class NativeSearch {
     for(int readerIDX=0;readerIDX<leaves.size();readerIDX++) {
       AtomicReaderContext ctx = leaves.get(readerIDX);
       SegmentState state = new SegmentState(ctx, field);
+      //System.out.println("  seg=" + readerIDX + " base=" + ctx.docBase);
       if (state.docsOnly) {
         throw new IllegalArgumentException("cannot handle DOCS_ONLY field");
       }
@@ -556,13 +578,13 @@ public class NativeSearch {
       }
 
       Scorer scorer = w.scorer(ctx, true, false, state.liveDocs);
-      //System.out.println("search TQ:" + scorer);
       if (scorer != null) {
 
-        //System.out.println("SCORER: " + scorer);
+        //System.out.println("    got scorer");
         float termWeight = getTermWeight(scorer);
 
         int singletonDocID;
+        long totalTermFreq;
 
         long address;
         DocsEnum docsEnum = unwrap(getDocsEnum(scorer));
@@ -577,22 +599,28 @@ public class NativeSearch {
           IndexInput docIn = getDocIn(docsEnum);
           address = getMMapAddress(docIn);
           singletonDocID = -1;
+          totalTermFreq = 0;
         } else {
           // Pulsed
           address = 0;
           singletonDocID = getSingletonDocID(docsEnum);
+          totalTermFreq = getTotalTermFreq(docsEnum);;
           assert singletonDocID >= 0;
+          assert singletonDocID < state.maxDoc;
         }
+        //System.out.println("    singletonDocID=" + singletonDocID + " liveDocs=" + state.liveDocsBytes + " docFreq=" + docFreq + " docsOnly=" + state.docsOnly);
 
         totalHits += searchSegmentTermQuery(topDocIDs,
                                             topScores,
                                             state.maxDoc,
                                             ctx.docBase,
                                             state.liveDocsBytes,
+                                            state.docsOnly,
                                             termWeight,
                                             state.normBytes,
                                             normTable,
                                             singletonDocID,
+                                            totalTermFreq,
                                             docFreq,
                                             docTermStartFP,
                                             address);
@@ -874,6 +902,7 @@ public class NativeSearch {
     ScoreDoc[] scoreDocs = new ScoreDoc[Math.min(totalHits, topN)];
 
     int heapSize = topN;
+    //System.out.println("buildTopDocs: totalHits=" + totalHits + " topN=" + topN);
 
     // Pop off any remaining sentinel values first (only
     // applies when totalHits < topN):
@@ -892,7 +921,7 @@ public class NativeSearch {
         topScores[1] = topScores[heapSize];
       }
       topDocIDs[1] = topDocIDs[heapSize];
-      //System.out.println("  topDocs[" + i + "]=" + scoreDocs[i].doc);
+      //System.out.println("  topDocs[" + i + "]=" + scoreDocs[i]);
       heapSize--;
       downHeap(heapSize, topDocIDs, topScores);
     }
@@ -904,7 +933,7 @@ public class NativeSearch {
       maxScore = Float.NaN;
     }
 
-    //System.out.println("NATIVE: TermQuery had " + totalHits + " hits");
+    //System.out.println("  maxScore=" + maxScore);
     return new TopDocs(totalHits, scoreDocs, maxScore);
   }
 
@@ -981,7 +1010,8 @@ public class NativeSearch {
     try {
       String className = in.getClass().getSimpleName();
       if (className.equals("MockIndexInputWrapper") ||
-          className.equals("SlowClosingMockIndexInputWrapper")) {
+          className.equals("SlowClosingMockIndexInputWrapper") ||
+          className.equals("SlowOpeningMockIndexInputWrapper")) {
         final Class<?> x = Class.forName("org.apache.lucene.store.MockIndexInputWrapper");
         Field f = x.getDeclaredField("delegate");
         f.setAccessible(true);
@@ -1100,6 +1130,17 @@ public class NativeSearch {
       Field f = x.getDeclaredField("docFreq");
       f.setAccessible(true);
       return f.getInt(docsEnum);
+    } catch (Exception e) {
+      throw new IllegalStateException("reflection failed", e);
+    }
+  }
+
+  private static long getTotalTermFreq(DocsEnum docsEnum) {
+    try {
+      Class<?> x = Class.forName("org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum");
+      Field f = x.getDeclaredField("totalTermFreq");
+      f.setAccessible(true);
+      return f.getLong(docsEnum);
     } catch (Exception e) {
       throw new IllegalStateException("reflection failed", e);
     }

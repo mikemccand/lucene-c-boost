@@ -5,4 +5,4 @@ To test:
   * Checkout lucene 4.3.x
   * Apply lucene43.test.patch, but tweak the hard-coded paths
   * Put the .so files on your LD_LIBRARY_PATH
-  * Run Lucene's tests: ant test -Dtestcase=TestBooleanQuery -Dtests.directory=NativeMMapDirectory -Dtests.similarity=DefaultSimilarity
+  * Run Lucene's tests: ant test -Dtests.postingsformat=Lucene41 -Dtests.codec=Lucene42 -Dtests.directory=NativeMMapDirectory -Dtests.showSuccess=true
