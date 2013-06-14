@@ -104,6 +104,8 @@ public class NativeSearch {
       // If the term has only one docID in this segment (it was "pulsed") then its set here, else -1:
       int[] singletonDocIDs,
 
+      long[] totalTermFreqs,
+
       // docFreq of each term
       int[] docFreqs,
       
@@ -609,7 +611,6 @@ public class NativeSearch {
           assert singletonDocID < state.maxDoc;
         }
         //System.out.println("    singletonDocID=" + singletonDocID + " liveDocs=" + state.liveDocsBytes + " docFreq=" + docFreq + " docsOnly=" + state.docsOnly);
-
         totalHits += searchSegmentTermQuery(topDocIDs,
                                             topScores,
                                             state.maxDoc,
@@ -742,6 +743,7 @@ public class NativeSearch {
 
         final float[] termWeights = new float[scorers.size()];
         final int[] singletonDocIDs = new int[scorers.size()];
+        final long[] totalTermFreqs = new long[scorers.size()];
         final int[] docFreqs = new int[scorers.size()];
         final long[] docTermStartFPs = new long[scorers.size()];
         long address = 0;
@@ -765,6 +767,7 @@ public class NativeSearch {
           } else {
             // Pulsed
             singletonDocIDs[i] = getSingletonDocID(docsEnum);
+            totalTermFreqs[i] = getTotalTermFreq(docsEnum);
             assert singletonDocIDs[i] >= 0;
           }
         }
@@ -835,6 +838,10 @@ public class NativeSearch {
             docTermStartFPs[i] = docTermStartFPs[j];
             docTermStartFPs[j] = y;
 
+            y = totalTermFreqs[i];
+            totalTermFreqs[i] = totalTermFreqs[j];
+            totalTermFreqs[j] = y;
+
             float z = termWeights[i];
             termWeights[i] = termWeights[j];
             termWeights[j] = z;
@@ -887,6 +894,7 @@ public class NativeSearch {
                                                normTable,
                                                coordFactors,
                                                singletonDocIDs,
+                                               totalTermFreqs,
                                                docFreqs,
                                                docTermStartFPs,
                                                address,

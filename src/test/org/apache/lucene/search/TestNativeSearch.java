@@ -687,4 +687,48 @@ public class TestNativeSearch extends LuceneTestCase {
     r.close();
     dir.close();
   }
+
+  public void testPulsedTermQuery() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    Document doc = new Document();
+    doc.add(new TextField("field", "lucene lucene", Field.Store.NO));
+    w.addDocument(doc);
+
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+
+    IndexSearcher s = new IndexSearcher(r);
+    assertSameHits(s, new TermQuery(new Term("field", "lucene")));
+    r.close();
+    dir.close();
+  }
+
+  public void testPulsedBooleanQuery() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    Document doc = new Document();
+    doc.add(new TextField("field", "lucene lucene", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "fun fun", Field.Store.NO));
+    w.addDocument(doc);
+
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+
+    IndexSearcher s = new IndexSearcher(r);
+    BooleanQuery bq = new BooleanQuery();
+    bq.add(new TermQuery(new Term("field", "lucene")), BooleanClause.Occur.SHOULD);
+    bq.add(new TermQuery(new Term("field", "fun")), BooleanClause.Occur.SHOULD);
+    assertSameHits(s, bq);
+    r.close();
+    dir.close();
+  }
 }

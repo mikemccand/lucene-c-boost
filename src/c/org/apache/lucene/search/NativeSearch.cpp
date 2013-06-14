@@ -87,6 +87,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
    // "pulsed") then its set here, else -1:
    jintArray jsingletonDocIDs,
 
+   jlongArray jtotalTermFreqs,
+
    // docFreq of each term
    jintArray jdocFreqs,
 
@@ -137,6 +139,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   PostingsState *subs = (PostingsState *) malloc(numScorers*sizeof(PostingsState));
 
   int *singletonDocIDs = env->GetIntArrayElements(jsingletonDocIDs, 0);
+  long *totalTermFreqs = env->GetLongArrayElements(jtotalTermFreqs, 0);
   long *docTermStartFPs = env->GetLongArrayElements(jdocTermStartFPs, 0);
   int *docFreqs = env->GetIntArrayElements(jdocFreqs, 0);
   float *termWeights = (float *) env->GetFloatArrayElements(jtermWeights, 0);
@@ -158,8 +161,6 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   isCopy = 0;
   float *normTable = (float *) env->GetPrimitiveArrayCritical(jnormTable, &isCopy);
   //printf("normTable %lx isCopy=%d\n", normTable, isCopy);fflush(stdout);
-  unsigned int *freq1 = (unsigned int *) malloc(sizeof(int));
-  freq1[0] = 1;
   // Init scorers:
   for(int i=0;i<numScorers;i++) {
     PostingsState *sub = &(subs[i]);
@@ -174,7 +175,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
       sub->blockLastRead = 0;
       sub->blockEnd = 0;
       sub->docDeltas = 0;
-      sub->freqs = freq1;
+      sub->freqs = (unsigned int *) malloc(sizeof(int));
+      sub->freqs[0] = (int) totalTermFreqs[i];
     } else {
       sub->docsLeft = docFreqs[i];
       if (scores != 0 && i >= numMustNot) {
@@ -250,6 +252,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   env->ReleasePrimitiveArrayCritical(jnormTable, normTable, JNI_ABORT);
 
   env->ReleaseIntArrayElements(jsingletonDocIDs, singletonDocIDs, JNI_ABORT);
+  env->ReleaseLongArrayElements(jtotalTermFreqs, totalTermFreqs, JNI_ABORT);
   env->ReleaseLongArrayElements(jdocTermStartFPs, docTermStartFPs, JNI_ABORT);
   env->ReleaseIntArrayElements(jdocFreqs, docFreqs, JNI_ABORT);
   env->ReleaseFloatArrayElements(jtermWeights, termWeights, JNI_ABORT);
@@ -273,11 +276,12 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   if (coords != 0) {
     free(coords);
   }
-  free(freq1);
   for(int i=0;i<numScorers;i++) {
     PostingsState *sub = &(subs[i]);
     if (sub->docDeltas != 0) {
       free(sub->docDeltas);
+    } else if (sub->freqs != 0) {
+      free(sub->freqs);
     }
   }
 
