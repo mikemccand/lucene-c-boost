@@ -94,13 +94,13 @@ if newer(cSources, nativeSearchLib):
   # -ftree-vectorizer-verbose=3
   # -march=corei7
   print('\nCompile NativeSearch.cpp')
-  run('g++ -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (nativeSearchLib, JAVA_HOME, JAVA_HOME, ' '.join(cSources)))
+  run('g++ -g -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (nativeSearchLib, JAVA_HOME, JAVA_HOME, ' '.join(cSources)))
 
 mmapSource = 'src/c/org/apache/lucene/store/NativeMMapDirectory.cpp'
 mmapLib = 'dist/libNativeMMapDirectory.so'
 if newer(mmapSource, mmapLib):
   print('\nCompile NativeMMapDirectory.cpp')
-  run('g++ -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (mmapLib, JAVA_HOME, JAVA_HOME, mmapSource))
+  run('g++ -g -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (mmapLib, JAVA_HOME, JAVA_HOME, mmapSource))
 
 print('\nCompile java sources')
 if not os.path.exists('build/classes/java'):
@@ -128,6 +128,7 @@ if True:
     command += ' -Dtests.method=%s' % sys.argv[1]
   command += ' org.junit.runner.JUnitCore'
   command += ' org.apache.lucene.search.TestNativeSearch'
+  print'  command: %s' % command
   p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
   while True:

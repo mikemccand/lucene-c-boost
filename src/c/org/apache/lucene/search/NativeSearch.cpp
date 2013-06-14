@@ -337,39 +337,65 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
    // Address in memory where .doc file is mapped:
    jlong docFileAddress)
 {
-  //printf("START search\n"); fflush(stdout);
-
   int topN = env->GetArrayLength(jtopDocIDs) - 1;
   //printf("topN=%d\n", topN);
 
+  unsigned char *liveDocBytes = 0;
+  unsigned char* norms = 0;
+  float *normTable = 0;
+  int *topDocIDs = 0;
+  float *topScores = 0;
+  register double *termScoreCache = 0;
+  PostingsState *sub = 0;
+  register int totalHits = 0;
+  bool failed = false;
+
   unsigned char isCopy = 0;
-  unsigned char *liveDocBytes;
   if (jliveDocBytes == 0) {
     liveDocBytes = 0;
   } else {
     liveDocBytes = (unsigned char *) env->GetPrimitiveArrayCritical(jliveDocBytes, &isCopy);
-    //printf("liveDocs isCopy=%d\n", isCopy);fflush(stdout);
+    if (liveDocBytes == 0) {
+      failed = true;
+      goto end;
+    }
   }
 
   isCopy = 0;
-  unsigned char* norms = (unsigned char *) env->GetPrimitiveArrayCritical(jnorms, &isCopy);
-  //printf("norms isCopy=%d\n", isCopy);fflush(stdout);
+  norms = (unsigned char *) env->GetPrimitiveArrayCritical(jnorms, &isCopy);
+  if (norms == 0) {
+    failed = true;
+    goto end;
+  }
 
   isCopy = 0;
-  float *normTable = (float *) env->GetPrimitiveArrayCritical(jnormTable, &isCopy);
-  //printf("normTable %lx isCopy=%d\n", normTable, isCopy);fflush(stdout);
-
-  register int totalHits = 0;
+  normTable = (float *) env->GetPrimitiveArrayCritical(jnormTable, &isCopy);
+  if (normTable == 0) {
+    failed = true;
+    goto end;
+  }
   // PQ holding top hits:
-  int *topDocIDs = (int *) env->GetIntArrayElements(jtopDocIDs, 0);
-  float *topScores;
+  topDocIDs = env->GetIntArrayElements(jtopDocIDs, 0);
+  if (topDocIDs == 0) {
+    failed = true;
+    goto end;
+  }
+
   if (jtopScores == 0) {
     topScores = 0;
   } else {
     topScores = (float *) env->GetFloatArrayElements(jtopScores, 0);
+    if (topScores == 0) {
+      failed = true;
+      goto end;
+    }
   }
 
-  register double *termScoreCache = (double *) malloc(TERM_SCORES_CACHE_SIZE*sizeof(double));
+  termScoreCache = (double *) malloc(TERM_SCORES_CACHE_SIZE*sizeof(double));
+  if (termScoreCache == 0) {
+    failed = true;
+    goto end;
+  }
   for(int j=0;j<TERM_SCORES_CACHE_SIZE;j++) {
     termScoreCache[j] = termWeight * sqrt(j);
   }
@@ -544,15 +570,30 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
 
 #else
 
-    PostingsState *sub = (PostingsState *) malloc(sizeof(PostingsState));
+    sub = (PostingsState *) malloc(sizeof(PostingsState));
+    if (sub == 0) {
+      failed = true;
+      goto end;
+    }
+
+    sub->docDeltas = 0;
+    sub->freqs = 0;
     sub->docsOnly = (bool) docsOnly;
     sub->docsLeft = docFreq;
     // Locality seemed to help here:
     if (jtopScores != 0) {
       sub->docDeltas = (unsigned int *) malloc(2*BLOCK_SIZE*sizeof(int));
+      if (sub->docDeltas == 0) {
+        failed = true;
+        goto end;
+      }
       sub->freqs = sub->docDeltas + BLOCK_SIZE;
     } else {
       sub->docDeltas = (unsigned int *) malloc(BLOCK_SIZE*sizeof(int));
+      if (sub->docDeltas == 0) {
+        failed = true;
+        goto end;
+      }
       sub->freqs = 0;
     }
     //printf("docFileAddress=%ld startFP=%ld\n", docFileAddress, docTermStartFPs[i]);fflush(stdout);
@@ -718,24 +759,38 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
       //printf("return totalHits=%d\n", docFreq);
     }
 #endif
+  }
 
+end:
+  if (termScoreCache != 0) {
     free(termScoreCache);
+  }
+  if (sub != 0) {
     if (sub->docDeltas != 0) {
       free(sub->docDeltas);
-    }
-
+    }    
     free(sub);
   }
-
-  env->ReleasePrimitiveArrayCritical(jnorms, norms, JNI_ABORT);
-  if (jliveDocBytes != 0) {
+  if (norms != 0) {
+    env->ReleasePrimitiveArrayCritical(jnorms, norms, JNI_ABORT);
+  }
+  if (liveDocBytes != 0) {
     env->ReleasePrimitiveArrayCritical(jliveDocBytes, liveDocBytes, JNI_ABORT);
   }
-  env->ReleasePrimitiveArrayCritical(jnormTable, normTable, JNI_ABORT);
+  if (normTable != 0) {
+    env->ReleasePrimitiveArrayCritical(jnormTable, normTable, JNI_ABORT);
+  }
 
-  env->ReleaseIntArrayElements(jtopDocIDs, topDocIDs, 0);
-  if (jtopScores != 0) {
+  if (topDocIDs != 0) {
+    env->ReleaseIntArrayElements(jtopDocIDs, topDocIDs, 0);
+  }
+  if (topScores != 0) {
     env->ReleaseFloatArrayElements(jtopScores, topScores, 0);
+  }
+
+  if (failed) {
+    jclass c = env->FindClass("java/lang/OutOfMemoryError");
+    return env->ThrowNew(c, "failed to allocate temporary memory");
   }
 
   return totalHits;
