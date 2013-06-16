@@ -21,7 +21,7 @@ import StringIO
 
 MAX_SPECIALIZED_BITS_PER_VALUE = 24;
 PACKED_64_SINGLE_BLOCK_BPV = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 21, 32]
-OUTPUT_FILE = "src/c/org/apache/lucene/search/decode.cpp"
+OUTPUT_FILE = "src/c/org/apache/lucene/search/common.cpp"
 
 def is_power_of_two(n):
   return n & (n - 1) == 0
@@ -125,11 +125,11 @@ if __name__ == '__main__':
   f.write('''
 
 static void readPackedBlock(PostingsState *sub, unsigned int *dest) {
-  unsigned char bitsPerValue = readByte(sub);
+  unsigned char bitsPerValue = readByte(&(sub->docFreqs));
   //printf("\\nreadPackedBlock bpv=%d\\n", bitsPerValue);
   if (bitsPerValue == 0) {
     // All values equal
-    unsigned int v = readVInt(sub);
+    unsigned int v = readVInt(&sub->docFreqs);
     for(int i=0;i<BLOCK_SIZE;i++) {
       dest[i] = v;
     }
@@ -141,8 +141,8 @@ static void readPackedBlock(PostingsState *sub, unsigned int *dest) {
     //x = (x+7) & ~7;
     //sub->p = (unsigned char *) x;
 
-    unsigned long *longBuffer = (unsigned long *) sub->p;
-    sub->p += numBytes;
+    unsigned long *longBuffer = (unsigned long *) sub->docFreqs;
+    sub->docFreqs += numBytes;
 
     // NOTE: Block PF uses PACKED_SINGLE_BLOCK for
     // bpv=1,2,4, else "ordinary" packed:

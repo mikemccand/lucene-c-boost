@@ -106,12 +106,12 @@ print('\nCompile java sources')
 if not os.path.exists('build/classes/java'):
   os.makedirs('build/classes/java')
 run('javac -XDignore.symbol.file -d build/classes/java -cp %s src/java/org/apache/lucene/store/*.java src/java/org/apache/lucene/search/*.java' % toClassPath(DEPS))
-run('jar cf dist/luceneCBoost.jar -C build/classes/java .')
+run('jar cf dist/luceneCBoost-SNAPSHOT.jar -C build/classes/java .')
 
 if not os.path.exists('build/classes/test'):
   os.makedirs('build/classes/test')
 
-run('javac -d build/classes/test -cp %s:dist/luceneCBoost.jar src/test/org/apache/lucene/search/*.java' % toClassPath(DEPS + TEST_DEPS))
+run('javac -d build/classes/test -cp %s:dist/luceneCBoost-SNAPSHOT.jar src/test/org/apache/lucene/search/*.java' % toClassPath(DEPS + TEST_DEPS))
 
 if True:
   print('\nRun tests')
@@ -119,7 +119,7 @@ if True:
     os.makedirs('build/test')
 
   command = 'export LD_LIBRARY_PATH=%s/dist; java -Xmx128m -ea' % os.getcwd()
-  command += ' -cp %s:build/classes/test:dist/luceneCBoost.jar' % toClassPath(DEPS + TEST_DEPS)
+  command += ' -cp %s:build/classes/test:dist/luceneCBoost-SNAPSHOT.jar' % toClassPath(DEPS + TEST_DEPS)
   command += ' -DtempDir=build/test'
   command += ' -Dtests.codec=Lucene42'
   command += ' -Dtests.directory=NativeMMapDirectory'

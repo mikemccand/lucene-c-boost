@@ -30,20 +30,36 @@ typedef struct {
   // How many docs left
   int docsLeft;
 
-  // Where (mapped in RAM) we decode postings from:
-  unsigned char* p;
+  // Where (mapped in RAM) we decode docs/freqs from:
+  unsigned char* docFreqs;
 
-  // Current block
+  // Current doc/freq block:
   unsigned int *docDeltas;
   unsigned int *freqs;
   int nextDocID;
-  int blockLastRead;
-  int blockEnd;
+  int docFreqBlockLastRead;
+  int docFreqBlockEnd;
+
+  // How many positions left
+  long posLeft;
+
+  // Where (mapped in RAM) we decode positions from:
+  unsigned char *pos;
+
+  // Current block of position deltas:
+  unsigned int *posDeltas;
+  int posBlockLastRead;
+  int posBlockEnd;
+  //int nextPos;
+  long posUpto;
+
   int id;
 } PostingsState;
 
-// exported from decode.cpp:
-void nextBlock(PostingsState* sub);
+// exported from common.cpp:
+void nextDocFreqBlock(PostingsState* sub);
+void skipPositions(PostingsState *sub, long posCount);
+
 void downHeapNoScores(int heapSize, int *topDocIDs);
 void downHeap(int heapSize, int *topDocIDs, float *topScores);
 

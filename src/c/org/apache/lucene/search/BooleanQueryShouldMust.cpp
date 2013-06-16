@@ -20,21 +20,21 @@
 #include "common.h"
 
 static int
-orFirstChunk(PostingsState *sub,
-             register double *tsCache,
-             register float termWeight,
-             register int endDoc,
-             register unsigned int *filled,
-             register int *docIDs,
-             register float *scores,
-             register unsigned int *coords) {
+orFirstMustChunk(PostingsState *sub,
+                 register double *tsCache,
+                 register float termWeight,
+                 register int endDoc,
+                 register unsigned int *filled,
+                 register int *docIDs,
+                 register float *scores,
+                 register unsigned int *coords) {
 
   register int nextDocID = sub->nextDocID;
   register unsigned int *docDeltas = sub->docDeltas;
   register unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->blockLastRead;
-  register int blockEnd = sub->blockEnd;
+  register int blockLastRead = sub->docFreqBlockLastRead;
+  register int blockEnd = sub->docFreqBlockEnd;
 
   register int numFilled = 0;
 
@@ -55,9 +55,9 @@ orFirstChunk(PostingsState *sub,
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
-          nextBlock(sub);
+          nextDocFreqBlock(sub);
           blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+          blockEnd = sub->docFreqBlockEnd;
         }
       }
       nextDocID += docDeltas[++blockLastRead];
@@ -86,9 +86,9 @@ orFirstChunk(PostingsState *sub,
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
-          nextBlock(sub);
+          nextDocFreqBlock(sub);
           blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+          blockEnd = sub->docFreqBlockEnd;
         }
       }
       nextDocID += docDeltas[++blockLastRead];
@@ -96,28 +96,28 @@ orFirstChunk(PostingsState *sub,
   }
 
   sub->nextDocID = nextDocID;
-  sub->blockLastRead = blockLastRead;
+  sub->docFreqBlockLastRead = blockLastRead;
   //printf("return numFilled=%d\n", numFilled);
   return numFilled;
 }
 
 static int
-orFirstChunkWithDeletes(PostingsState *sub,
-                       register double *tsCache,
-                       register float termWeight,
-                       register int endDoc,
-                       register unsigned int *filled,
-                       register int *docIDs,
-                       register float *scores,
-                       register unsigned int *coords,
-                       register unsigned char *liveDocsBytes) {
+orFirstMustChunkWithDeletes(PostingsState *sub,
+                            register double *tsCache,
+                            register float termWeight,
+                            register int endDoc,
+                            register unsigned int *filled,
+                            register int *docIDs,
+                            register float *scores,
+                            register unsigned int *coords,
+                            register unsigned char *liveDocsBytes) {
 
   register int nextDocID = sub->nextDocID;
   register unsigned int *docDeltas = sub->docDeltas;
   register unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->blockLastRead;
-  register int blockEnd = sub->blockEnd;
+  register int blockLastRead = sub->docFreqBlockLastRead;
+  register int blockEnd = sub->docFreqBlockEnd;
 
   register int numFilled = 0;
 
@@ -139,9 +139,9 @@ orFirstChunkWithDeletes(PostingsState *sub,
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
-          nextBlock(sub);
+          nextDocFreqBlock(sub);
           blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+          blockEnd = sub->docFreqBlockEnd;
         }
       }
       nextDocID += docDeltas[++blockLastRead];
@@ -169,9 +169,9 @@ orFirstChunkWithDeletes(PostingsState *sub,
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
-          nextBlock(sub);
+          nextDocFreqBlock(sub);
           blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+          blockEnd = sub->docFreqBlockEnd;
         }
       }
       nextDocID += docDeltas[++blockLastRead];
@@ -179,16 +179,17 @@ orFirstChunkWithDeletes(PostingsState *sub,
   }
 
   sub->nextDocID = nextDocID;
-  sub->blockLastRead = blockLastRead;
+  sub->docFreqBlockLastRead = blockLastRead;
   //printf("return numFilled=%d\n", numFilled);
   return numFilled;
 }
 
-static void
+static int
 orMustChunk(PostingsState *sub,
             register double *tsCache,
             register float termWeight,
             register int endDoc,
+            register unsigned int *filled,
             register int *docIDs,
             register float *scores,
             register unsigned int *coords,
@@ -198,16 +199,17 @@ orMustChunk(PostingsState *sub,
   register unsigned int *docDeltas = sub->docDeltas;
   register unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->blockLastRead;
-  register int blockEnd = sub->blockEnd;
-
+  register int blockLastRead = sub->docFreqBlockLastRead;
+  register int blockEnd = sub->docFreqBlockEnd;
+  register int numFilled = 0;
   if (scores == 0) {
     while (nextDocID < endDoc) {
       //printf("  docID=%d\n", nextDocID);
       int slot = nextDocID & MASK;
 
-      if (docIDs[slot] == nextDocID) {
+      if (docIDs[slot] == nextDocID && coords[slot] == prevMustClauseCount) {
         coords[slot]++;
+        filled[numFilled++] = slot;
       }
 
       // Inlined nextDoc:
@@ -216,9 +218,9 @@ orMustChunk(PostingsState *sub,
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
-          nextBlock(sub);
+          nextDocFreqBlock(sub);
           blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+          blockEnd = sub->docFreqBlockEnd;
         }
       }
       nextDocID += docDeltas[++blockLastRead];
@@ -231,6 +233,7 @@ orMustChunk(PostingsState *sub,
       int slot = nextDocID & MASK;
       if (docIDs[slot] == nextDocID && coords[slot] == prevMustClauseCount) {
         int freq = freqs[blockLastRead];
+        filled[numFilled++] = slot;
         double score;
         if (freq < TERM_SCORES_CACHE_SIZE) {
           score = tsCache[freq];
@@ -248,9 +251,9 @@ orMustChunk(PostingsState *sub,
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
-          nextBlock(sub);
+          nextDocFreqBlock(sub);
           blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+          blockEnd = sub->docFreqBlockEnd;
         }
       }
       nextDocID += docDeltas[++blockLastRead];
@@ -258,7 +261,9 @@ orMustChunk(PostingsState *sub,
   }
 
   sub->nextDocID = nextDocID;
-  sub->blockLastRead = blockLastRead;
+  sub->docFreqBlockLastRead = blockLastRead;
+
+  return numFilled;
 }
 
 static void
@@ -275,8 +280,8 @@ orShouldChunk(PostingsState *sub,
   register unsigned int *docDeltas = sub->docDeltas;
   register unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->blockLastRead;
-  register int blockEnd = sub->blockEnd;
+  register int blockLastRead = sub->docFreqBlockLastRead;
+  register int blockEnd = sub->docFreqBlockEnd;
 
   //printf("term=%d nextDoc=%d\n", i, sub->nextDocID);
   while (nextDocID < endDoc) {
@@ -302,16 +307,16 @@ orShouldChunk(PostingsState *sub,
         nextDocID = NO_MORE_DOCS;
         break;
       } else {
-        nextBlock(sub);
+        nextDocFreqBlock(sub);
         blockLastRead = -1;
-        blockEnd = sub->blockEnd;
+        blockEnd = sub->docFreqBlockEnd;
       }
     }
     nextDocID += docDeltas[++blockLastRead];
   }
 
   sub->nextDocID = nextDocID;
-  sub->blockLastRead = blockLastRead;
+  sub->docFreqBlockLastRead = blockLastRead;
 }
 
 int booleanQueryShouldMust(PostingsState* subs,
@@ -345,13 +350,13 @@ int booleanQueryShouldMust(PostingsState* subs,
     int numFilled;
 
     if (liveDocsBytes != 0) {
-      numFilled = orFirstChunkWithDeletes(&subs[0], termScoreCache[0], termWeights[0], endDoc, filled, docIDs, scores, coords, liveDocsBytes);
+      numFilled = orFirstMustChunkWithDeletes(&subs[0], termScoreCache[0], termWeights[0], endDoc, filled, docIDs, scores, coords, liveDocsBytes);
     } else {
-      numFilled = orFirstChunk(&subs[0], termScoreCache[0], termWeights[0], endDoc, filled, docIDs, scores, coords);
+      numFilled = orFirstMustChunk(&subs[0], termScoreCache[0], termWeights[0], endDoc, filled, docIDs, scores, coords);
     }
     //printf("  numFilled=%d\n", numFilled);
     for(int i=1;i<numMust;i++) {
-      orMustChunk(&subs[i], termScoreCache[i], termWeights[i], endDoc, docIDs, scores, coords, i);
+      numFilled = orMustChunk(&subs[i], termScoreCache[i], termWeights[i], endDoc, filled, docIDs, scores, coords, i);
     }
 
     if (topScores != 0) {
@@ -363,9 +368,6 @@ int booleanQueryShouldMust(PostingsState* subs,
     if (topScores == 0) {
       for(int i=0;i<numFilled;i++) {
         int slot = filled[i];
-        if (coords[slot] < numMust) {
-          continue;
-        }
         hitCount++;
         int docID = docBase + docIDs[slot];
         // TODO: we can stop collecting, and tracking filled,
@@ -383,9 +385,6 @@ int booleanQueryShouldMust(PostingsState* subs,
       //printf("collect numFilled=%d:\n", numFilled);
       for(int i=0;i<numFilled;i++) {
         int slot = filled[i];
-        if (coords[slot] < numMust) {
-          continue;
-        }
         hitCount++;
         float score = scores[slot] * coordFactors[coords[slot]] * normTable[norms[docIDs[slot]]];
         int docID = docBase + docIDs[slot];

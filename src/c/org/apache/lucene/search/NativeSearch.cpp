@@ -241,8 +241,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
       //printf("  singleton: %d\n", singletonDocIDs[i]);
       sub->nextDocID = singletonDocIDs[i];
       sub->docsLeft = 0;
-      sub->blockLastRead = 0;
-      sub->blockEnd = 0;
+      sub->docFreqBlockLastRead = 0;
+      sub->docFreqBlockEnd = 0;
       sub->docDeltas = 0;
       sub->freqs = (unsigned int *) malloc(sizeof(int));
       if (sub->freqs == 0) {
@@ -270,12 +270,12 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
         sub->freqs = 0;
       }
       //printf("docFileAddress=%ld startFP=%ld\n", docFileAddress, docTermStartFPs[i]);fflush(stdout);
-      sub->p = ((unsigned char *) docFileAddress) + docTermStartFPs[i];
+      sub->docFreqs = ((unsigned char *) docFileAddress) + docTermStartFPs[i];
       //printf("  not singleton\n");
-      nextBlock(sub);
+      nextDocFreqBlock(sub);
       sub->nextDocID = sub->docDeltas[0];
       //printf("docDeltas[0]=%d\n", sub->docDeltas[0]);
-      sub->blockLastRead = 0;
+      sub->docFreqBlockLastRead = 0;
     }
     //printf("init i=%d nextDocID=%d freq=%d blockEnd=%d singleton=%d\n", i, sub->nextDocID, sub->nextFreq, sub->blockEnd, singletonDocIDs[i]);fflush(stdout);
   }
@@ -733,19 +733,19 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
       sub->freqs = 0;
     }
     //printf("docFileAddress=%ld startFP=%ld\n", docFileAddress, docTermStartFPs[i]);fflush(stdout);
-    sub->p = ((unsigned char *) docFileAddress) + docTermStartFP;
+    sub->docFreqs = ((unsigned char *) docFileAddress) + docTermStartFP;
     //printf("  not singleton\n");
-    nextBlock(sub);
+    nextDocFreqBlock(sub);
     sub->nextDocID = sub->docDeltas[0];
     //printf("docDeltas[0]=%d\n", sub->docDeltas[0]);
-    sub->blockLastRead = 0;
+    sub->docFreqBlockLastRead = 0;
 
     register int nextDocID = sub->nextDocID;
     register unsigned int *docDeltas = sub->docDeltas;
     register unsigned int *freqs = sub->freqs;
 
-    register int blockLastRead = sub->blockLastRead;
-    register int blockEnd = sub->blockEnd;
+    register int blockLastRead = sub->docFreqBlockLastRead;
+    register int blockEnd = sub->docFreqBlockEnd;
   
     if (liveDocBytes != 0) {
       if (topScores == 0) {
@@ -768,9 +768,9 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
             if (sub->docsLeft == 0) {
               break;
             } else {
-              nextBlock(sub);
+              nextDocFreqBlock(sub);
               blockLastRead = -1;
-              blockEnd = sub->blockEnd;
+              blockEnd = sub->docFreqBlockEnd;
             }
           }
 
@@ -811,9 +811,9 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
             if (sub->docsLeft == 0) {
               break;
             } else {
-              nextBlock(sub);
+              nextDocFreqBlock(sub);
               blockLastRead = -1;
-              blockEnd = sub->blockEnd;
+              blockEnd = sub->docFreqBlockEnd;
             }
           }
 
@@ -841,9 +841,9 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
             if (sub->docsLeft == 0) {
               break;
             } else {
-              nextBlock(sub);
+              nextDocFreqBlock(sub);
               blockLastRead = -1;
-              blockEnd = sub->blockEnd;
+              blockEnd = sub->docFreqBlockEnd;
             }
           }
 
@@ -881,9 +881,9 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
             if (sub->docsLeft == 0) {
               break;
             } else {
-              nextBlock(sub);
+              nextDocFreqBlock(sub);
               blockLastRead = -1;
-              blockEnd = sub->blockEnd;
+              blockEnd = sub->docFreqBlockEnd;
             }
           }
 
@@ -969,14 +969,14 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
   int i = 0;
   while (i < numTerms) {
     sub->docsLeft = (int) termStats[i++];
-    sub->p = (unsigned char *) (address + termStats[i++]);
-    nextBlock(sub);
+    sub->docFreqs = (unsigned char *) (address + termStats[i++]);
+    nextDocFreqBlock(sub);
     int nextDocID = 0;
 
     //printf("do term %d docFreq=%d\n", i, sub->docsLeft);fflush(stdout);
 
     while (true) {
-      register int limit = sub->blockEnd+1;
+      register int limit = sub->docFreqBlockEnd+1;
       //printf("  limit %d\n", limit);fflush(stdout);
       if (liveDocsBytes == 0) {
         for(int j=0;j<limit;j++) {
@@ -994,7 +994,7 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
       if (sub->docsLeft == 0) {
         break;
       } else {
-        nextBlock(sub);
+        nextDocFreqBlock(sub);
       }
     }
   }

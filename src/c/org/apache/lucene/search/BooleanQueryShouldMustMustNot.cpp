@@ -29,8 +29,8 @@ orMustNotChunk(PostingsState *sub,
   register unsigned int *docDeltas = sub->docDeltas;
   register unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->blockLastRead;
-  register int blockEnd = sub->blockEnd;
+  register int blockLastRead = sub->docFreqBlockLastRead;
+  register int blockEnd = sub->docFreqBlockEnd;
 
   while (nextDocID < endDoc) {
     //printf("  docID=%d\n", nextDocID);
@@ -44,16 +44,16 @@ orMustNotChunk(PostingsState *sub,
         nextDocID = NO_MORE_DOCS;
         break;
       } else {
-        nextBlock(sub);
+        nextDocFreqBlock(sub);
         blockLastRead = -1;
-        blockEnd = sub->blockEnd;
+        blockEnd = sub->docFreqBlockEnd;
       }
     }
     nextDocID += docDeltas[++blockLastRead];
   }
 
   sub->nextDocID = nextDocID;
-  sub->blockLastRead = blockLastRead;
+  sub->docFreqBlockLastRead = blockLastRead;
 }
 
 static int
@@ -70,8 +70,8 @@ orFirstMustChunk(PostingsState *sub,
   register unsigned int *docDeltas = sub->docDeltas;
   register unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->blockLastRead;
-  register int blockEnd = sub->blockEnd;
+  register int blockLastRead = sub->docFreqBlockLastRead;
+  register int blockEnd = sub->docFreqBlockEnd;
 
   register int numFilled = 0;
 
@@ -93,9 +93,9 @@ orFirstMustChunk(PostingsState *sub,
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
-          nextBlock(sub);
+          nextDocFreqBlock(sub);
           blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+          blockEnd = sub->docFreqBlockEnd;
         }
       }
       nextDocID += docDeltas[++blockLastRead];
@@ -124,9 +124,9 @@ orFirstMustChunk(PostingsState *sub,
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
-          nextBlock(sub);
+          nextDocFreqBlock(sub);
           blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+          blockEnd = sub->docFreqBlockEnd;
         }
       }
       nextDocID += docDeltas[++blockLastRead];
@@ -134,7 +134,7 @@ orFirstMustChunk(PostingsState *sub,
   }
 
   sub->nextDocID = nextDocID;
-  sub->blockLastRead = blockLastRead;
+  sub->docFreqBlockLastRead = blockLastRead;
   //printf("return numFilled=%d\n", numFilled);
   return numFilled;
 }
@@ -154,8 +154,8 @@ orFirstMustChunkWithDeletes(PostingsState *sub,
   register unsigned int *docDeltas = sub->docDeltas;
   register unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->blockLastRead;
-  register int blockEnd = sub->blockEnd;
+  register int blockLastRead = sub->docFreqBlockLastRead;
+  register int blockEnd = sub->docFreqBlockEnd;
 
   register int numFilled = 0;
 
@@ -179,9 +179,9 @@ orFirstMustChunkWithDeletes(PostingsState *sub,
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
-          nextBlock(sub);
+          nextDocFreqBlock(sub);
           blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+          blockEnd = sub->docFreqBlockEnd;
         }
       }
       nextDocID += docDeltas[++blockLastRead];
@@ -211,9 +211,9 @@ orFirstMustChunkWithDeletes(PostingsState *sub,
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
-          nextBlock(sub);
+          nextDocFreqBlock(sub);
           blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+          blockEnd = sub->docFreqBlockEnd;
         }
       }
       nextDocID += docDeltas[++blockLastRead];
@@ -221,7 +221,7 @@ orFirstMustChunkWithDeletes(PostingsState *sub,
   }
 
   sub->nextDocID = nextDocID;
-  sub->blockLastRead = blockLastRead;
+  sub->docFreqBlockLastRead = blockLastRead;
   //printf("return numFilled=%d\n", numFilled);
   return numFilled;
 }
@@ -241,8 +241,8 @@ orShouldChunk(PostingsState *sub,
   register unsigned int *docDeltas = sub->docDeltas;
   register unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->blockLastRead;
-  register int blockEnd = sub->blockEnd;
+  register int blockLastRead = sub->docFreqBlockLastRead;
+  register int blockEnd = sub->docFreqBlockEnd;
 
   //printf("term=%d nextDoc=%d\n", i, sub->nextDocID);
   while (nextDocID < endDoc) {
@@ -268,16 +268,16 @@ orShouldChunk(PostingsState *sub,
         nextDocID = NO_MORE_DOCS;
         break;
       } else {
-        nextBlock(sub);
+        nextDocFreqBlock(sub);
         blockLastRead = -1;
-        blockEnd = sub->blockEnd;
+        blockEnd = sub->docFreqBlockEnd;
       }
     }
     nextDocID += docDeltas[++blockLastRead];
   }
 
   sub->nextDocID = nextDocID;
-  sub->blockLastRead = blockLastRead;
+  sub->docFreqBlockLastRead = blockLastRead;
 }
 
 static void
@@ -294,8 +294,8 @@ orMustChunk(PostingsState *sub,
   register unsigned int *docDeltas = sub->docDeltas;
   register unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->blockLastRead;
-  register int blockEnd = sub->blockEnd;
+  register int blockLastRead = sub->docFreqBlockLastRead;
+  register int blockEnd = sub->docFreqBlockEnd;
 
   if (scores == 0) {
     while (nextDocID < endDoc) {
@@ -312,9 +312,9 @@ orMustChunk(PostingsState *sub,
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
-          nextBlock(sub);
+          nextDocFreqBlock(sub);
           blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+          blockEnd = sub->docFreqBlockEnd;
         }
       }
       nextDocID += docDeltas[++blockLastRead];
@@ -344,9 +344,9 @@ orMustChunk(PostingsState *sub,
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
-          nextBlock(sub);
+          nextDocFreqBlock(sub);
           blockLastRead = -1;
-          blockEnd = sub->blockEnd;
+          blockEnd = sub->docFreqBlockEnd;
         }
       }
       nextDocID += docDeltas[++blockLastRead];
@@ -354,7 +354,7 @@ orMustChunk(PostingsState *sub,
   }
 
   sub->nextDocID = nextDocID;
-  sub->blockLastRead = blockLastRead;
+  sub->docFreqBlockLastRead = blockLastRead;
 }
 
 int booleanQueryShouldMustMustNot(PostingsState* subs,

@@ -82,11 +82,11 @@ Index: lucene/core/build.xml
  
 -  <path id="classpath"/>
 +  <path id="classpath">
-+    <pathelement location="/home/mike/src/lucene-c-boost/dist/luceneCBoost.jar"/>
++    <pathelement location="/home/mike/src/lucene-c-boost/dist/luceneCBoost-SNAPSHOT.jar"/>
 +  </path>
    
    <path id="test.classpath">
-+    <pathelement location="/home/mike/src/lucene-c-boost/dist/luceneCBoost.jar"/>
++    <pathelement location="/home/mike/src/lucene-c-boost/dist/luceneCBoost-SNAPSHOT.jar"/>
      <pathelement location="${common.dir}/build/test-framework/classes/java"/>
      <pathelement location="${common.dir}/build/codecs/classes/java"/>
      <path refid="junit-path"/>

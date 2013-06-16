@@ -28,6 +28,11 @@ hmm TermsFilter?
 
 hmm BooleanFilter?
 
+PQ
+  - constant score query wrapped around it?
+
+MUST: we can re-compute filled every time!  so that we don't iterate over too many on each iter
+
 Filter via acceptDocs
 
 fix TermQuery !!  just do for loop over block size --> slower (strangely)
@@ -39,8 +44,6 @@ add a "requireExactTotalHits" boolean
 CSQ(TermQuery) can be massively optimized in the no deletes case!
 
 hmm will this "starve" GC?
-
-must null check every getXXXArray
 
 how to work across diff't lucene versions!?
 
