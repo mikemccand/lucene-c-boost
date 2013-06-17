@@ -14,9 +14,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #include <math.h>
 #include <stdlib.h>
-//#include <stdio.h>
+#include <stdio.h>
 
 #include "common.h"
 
@@ -276,6 +277,7 @@ int phraseQuery(PostingsState* subs,
   }
 
   while (docUpto < maxDoc) {
+    printf("cycle docUpto=%d\n", docUpto);
     register int endDoc = docUpto + CHUNK;
     if (liveDocsBytes != 0) {
       orFirstMustChunkWithDeletes(&subs[0], endDoc, docIDs, coords, liveDocsBytes);
@@ -285,10 +287,14 @@ int phraseQuery(PostingsState* subs,
     for(int i=1;i<numScorers-1;i++) {
       orMustChunk(&subs[i], endDoc, docIDs, coords, i);
     }
+    // TODO: we could check positions inside orLastMustChunk
+    // instead, saves one pass:
     int numFilled = orLastMustChunk(&subs[numScorers-1], endDoc, filled, docIDs, coords, numScorers-1);
-
+    printf("  numFilled=%d\n", numFilled);
     for(int i=0;i<numFilled;i++) {
       int slot = filled[i];
+      printf("check positions docID=%d\n", docIDs[i]);
+
       // This doc has all of the terms, now check their
       // positions:
         
@@ -296,9 +302,12 @@ int phraseQuery(PostingsState* subs,
       // for this document:
       for(int j=0;j<numScorers;j++) {
         PostingsState *sub = subs+j;
+        printf("  scorer[%d]: skip %d positions\n", j, sub->tfSums[slot] - sub->posUpto);
         skipPositions(sub, sub->tfSums[slot]);
         sub->nextPos = posOffsets[j] + sub->posDeltas[sub->posBlockLastRead];
+        printf("    nextPos=%d\n", sub->nextPos);
         sub->posLeftInDoc = sub->tfs[slot];
+        printf("    posLeftInDoc=%d\n", sub->posLeftInDoc);
       }
 
       bool done = false;
@@ -310,11 +319,13 @@ int phraseQuery(PostingsState* subs,
       int posUpto = 0;
 
       while (true) {
+        printf("  cycle posUpto=%d\n", posUpto);
 
         PostingsState *sub = subs;
 
         int endPos = posUpto + POS_CHUNK;
 
+        // First terms in phrase:
         int posBlockLastRead = sub->posBlockLastRead;
         unsigned int *posDeltas = sub->posDeltas;
         unsigned int posBlockEnd = sub->posBlockEnd;
@@ -341,6 +352,8 @@ int phraseQuery(PostingsState* subs,
             }
           }
         }
+
+        // Middle terms in phrase:
         sub->posBlockEnd = posBlockEnd;
         sub->posBlockLastRead = posBlockLastRead;
         sub->nextPos = pos;
@@ -377,6 +390,7 @@ int phraseQuery(PostingsState* subs,
           sub->nextPos = pos;
         }
 
+        // Last term in phrase:
         sub = subs + numScorers-1;
         posBlockLastRead = sub->posBlockLastRead;
         posDeltas = sub->posDeltas;
@@ -425,6 +439,7 @@ int phraseQuery(PostingsState* subs,
       }
 
       if (phraseFreq != 0) {
+        printf("  phrasFreq=%d\n", phraseFreq);
 
         hitCount++;
 
@@ -461,9 +476,12 @@ int phraseQuery(PostingsState* subs,
         }
       }
     }
+
+    docUpto += CHUNK;
   }
 
  end:
+  printf("now free\n");fflush(stdout);
   if (positions != 0) {
     free(positions);
   }
@@ -479,6 +497,7 @@ int phraseQuery(PostingsState* subs,
     }
   }
 
+  printf("done free failed=%d hitCount=%d\n", failed, hitCount);fflush(stdout);
   if (failed) {
     return -1;
   } else {

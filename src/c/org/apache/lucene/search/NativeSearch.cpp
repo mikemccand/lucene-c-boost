@@ -119,7 +119,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   int *singletonDocIDs = 0;
   long *totalTermFreqs = 0;
   long *docTermStartFPs = 0;
-  int *docFreqs;
+  int *docFreqs = 0;
   float *termWeights = 0;
   float *coordFactors = 0;
   unsigned char *liveDocsBytes = 0;
@@ -1066,17 +1066,16 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentExactPhraseQuery
 
    jboolean indexHasOffsets)
 {
+  bool failed = false;
   float *scores = 0;
   int *docIDs = 0;
   unsigned int *coords = 0;
-  bool failed = false;
-  unsigned char *skips = 0;
   PostingsState *subs = 0;
   int *singletonDocIDs = 0;
   long *totalTermFreqs = 0;
   long *docTermStartFPs = 0;
   long *posTermStartFPs = 0;
-  int *docFreqs;
+  int *docFreqs = 0;
   unsigned char *liveDocsBytes = 0;
   unsigned char* norms = 0;
   float *normTable = 0;
@@ -1089,6 +1088,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentExactPhraseQuery
   int numScorers;
   int topN;
   int hitCount;
+
+  printf("here\n");fflush(stdout);
 
   if (jtopScores == 0) {
     scores = 0;
@@ -1253,8 +1254,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentExactPhraseQuery
     failed = true;
     goto end;
   }
-
-  termScoreCache = (double *) malloc(numScorers*sizeof(double));
+  termScoreCache = (double *) malloc(TERM_SCORES_CACHE_SIZE*sizeof(double));
   if (termScoreCache == 0) {
     failed = true;
     goto end;
@@ -1279,12 +1279,12 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentExactPhraseQuery
                          normTable,
                          norms,
                          posOffsets);
+
   if (hitCount == -1) {
     failed = true;
   }
 
  end:
-
   if (norms != 0) {
     env->ReleasePrimitiveArrayCritical(jnorms, norms, JNI_ABORT);
   }
@@ -1326,9 +1326,6 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentExactPhraseQuery
   }
   if (docIDs != 0) {
     free(docIDs);
-  }
-  if (skips != 0) {
-    free(skips);
   }
   if (scores != 0) {
     free(scores);

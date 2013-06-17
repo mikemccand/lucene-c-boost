@@ -37,7 +37,9 @@ instead of docIDs[slot] we can do docUpto + slot!  saves a mem ref, but adds an 
 hmm only the LAST must clause needs to fill in numFilled!  don't bother filling for first N-1
 
 PQ
+  - how should we sort the terms?
   - constant score query wrapped around it?
+  - check positinos inside orLastMustChunk instead
 
 MUST: we can re-compute filled every time!  so that we don't iterate over too many on each iter
 

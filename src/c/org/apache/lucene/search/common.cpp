@@ -16,6 +16,7 @@
  */
 
 #include <byteswap.h>
+#include <stdio.h>
 #include "common.h"
 
 static unsigned char readByte(unsigned char **p) {
@@ -2381,6 +2382,7 @@ static void readVIntPosBlock(PostingsState *sub) {
       sub->pos += payloadLength;
     } else {
       sub->posDeltas[i] = code;
+      printf("pos code[%d] = %d\n", i, code);
     }
     if (sub->indexHasOffsets) {
       if ((readVInt(&(sub->pos)) & 1) != 0) {
@@ -2432,6 +2434,7 @@ void nextDocFreqBlock(PostingsState* sub) {
 
 void nextPosBlock(PostingsState* sub) {
   sub->posBlockLastRead = -1;
+  printf("nextPosBlock posLeft=%d\n", sub->posLeft);
   if (sub->posLeft >= BLOCK_SIZE) {
     //printf("  nextBlock: packed\n");
     readPackedBlock(&sub->pos, sub->posDeltas);
