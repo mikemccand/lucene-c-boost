@@ -753,4 +753,85 @@ public class TestNativeSearch extends LuceneTestCase {
     r.close();
     dir.close();
   }
+
+  public void testExactPhraseQuery2() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    Document doc = new Document();
+    doc.add(new TextField("field", "the doc", Field.Store.NO));
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "the doc the doc the doc the not doc", Field.Store.NO));
+    w.addDocument(doc);
+
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+
+    IndexSearcher s = new IndexSearcher(r);
+    PhraseQuery q = new PhraseQuery();
+    q.add(new Term("field", "the"));
+    q.add(new Term("field", "doc"));
+    assertSameHits(s, q);
+    r.close();
+    dir.close();
+  }
+
+  public void testExactPhraseQuery3() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    int numDocs = atLeast(10000);
+    for(int i=0;i<numDocs;i++) {
+      Document doc = new Document();
+      doc.add(new TextField("field", "abc foo bar the doc x y z", Field.Store.NO));
+      w.addDocument(doc);
+    }
+
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+
+    IndexSearcher s = new IndexSearcher(r);
+    PhraseQuery q = new PhraseQuery();
+    q.add(new Term("field", "the"));
+    q.add(new Term("field", "doc"));
+    assertSameHits(s, q);
+    r.close();
+    dir.close();
+  }
+
+  public void testExactPhraseQuery4() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    int every = _TestUtil.nextInt(random(), 2, 1000);
+    for(int i=0;i<1100;i++) {
+      Document doc = new Document();
+      if (i % every == 0) {
+        doc.add(new TextField("field", "the doc", Field.Store.NO));
+      } else if (i % 2 == 0) {
+        doc.add(new TextField("field", "the", Field.Store.NO));
+      } else {
+        doc.add(new TextField("field", "doc", Field.Store.NO));
+      }
+      w.addDocument(doc);
+    }
+
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+
+    IndexSearcher s = new IndexSearcher(r);
+    PhraseQuery q = new PhraseQuery();
+    q.add(new Term("field", "the"));
+    q.add(new Term("field", "doc"));
+    assertSameHits(s, q);
+    r.close();
+    dir.close();
+  }
 }

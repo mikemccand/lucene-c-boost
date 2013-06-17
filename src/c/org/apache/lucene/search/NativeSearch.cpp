@@ -1089,8 +1089,6 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentExactPhraseQuery
   int topN;
   int hitCount;
 
-  printf("here\n");fflush(stdout);
-
   if (jtopScores == 0) {
     scores = 0;
   } else {
@@ -1188,7 +1186,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentExactPhraseQuery
     sub->indexHasOffsets = indexHasOffsets;
     sub->docsOnly = false;
     sub->id = i;
-    //printf("init scorers[%d] of %d\n", i, numScorers);
+    //printf("\ninit scorers[%d] of %d\n", i, numScorers);fflush(stdout);
 
     if (singletonDocIDs[i] != -1) {
       //printf("  singleton: %d\n", singletonDocIDs[i]);

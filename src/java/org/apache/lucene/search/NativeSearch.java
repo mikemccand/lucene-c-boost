@@ -344,7 +344,7 @@ public class NativeSearch {
     } else if (query instanceof BooleanQuery) {
       return _searchBooleanQuery(searcher, (BooleanQuery) query, topN, constantScore);
     } else {
-      throw new IllegalArgumentException("rewritten query must be TermQuery or BooleanQuery; got: " + query);
+      throw new IllegalArgumentException("rewritten query must be TermQuery, BooleanQuery or PhraseQuery; got: " + query.getClass());
     }
   }
 
@@ -779,7 +779,7 @@ public class NativeSearch {
           posOffsets[i] = getIntField(chunkStates[i],
                                       "org.apache.lucene.search.ExactPhraseScorer$ChunkState",
                                       "offset");
-          System.out.println("posOffset=" + posOffsets[i]);
+          //System.out.println("posOffset=" + posOffsets[i]);
           if (posEnum.getClass().getName().indexOf("Lucene41PostingsReader") == -1 ||
               posEnum.getClass().getName().indexOf("BlockDocsAndPositionsEnum") == -1) {
             throw new IllegalArgumentException("must use Lucene41PostingsFormat; got " + posEnum.getClass().getName());

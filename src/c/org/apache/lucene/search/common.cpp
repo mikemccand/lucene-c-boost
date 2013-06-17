@@ -2382,7 +2382,7 @@ static void readVIntPosBlock(PostingsState *sub) {
       sub->pos += payloadLength;
     } else {
       sub->posDeltas[i] = code;
-      printf("pos code[%d] = %d\n", i, code);
+      //printf("pos code[%d] = %d\n", i, code);
     }
     if (sub->indexHasOffsets) {
       if ((readVInt(&(sub->pos)) & 1) != 0) {
@@ -2395,16 +2395,22 @@ static void readVIntPosBlock(PostingsState *sub) {
 
 void skipPositions(PostingsState *sub, long posCount) {
   long numToSkip = posCount - sub->posUpto;
-  while (true) {
-    int leftInBlock = sub->posBlockEnd - sub->posBlockLastRead;
-    if (leftInBlock >= numToSkip) {
-      sub->posBlockLastRead += numToSkip;
-      break;
-    } else {
-      numToSkip -= leftInBlock;
+  //printf("skipPositions: %d\n", numToSkip);
+  int leftInBlock = sub->posBlockEnd - sub->posBlockLastRead;
+  if (numToSkip <= leftInBlock) {
+    //printf("  skip w/in block\n");
+    sub->posBlockLastRead += numToSkip;
+  } else {
+    numToSkip -= leftInBlock;
+    //printf("  skip rest of this block\n");
+    while (numToSkip >= BLOCK_SIZE) {
+      numToSkip -= BLOCK_SIZE;
+      //printf("  skip whole block\n");
       skipPackedBlock(&(sub->pos));
-      sub->posBlockLastRead = -1;
     }
+    nextPosBlock(sub);
+    //printf("  skip part of last block (%d)\n", numToSkip);
+    sub->posBlockLastRead += numToSkip;
   }
   sub->posUpto = posCount;
 }
@@ -2434,7 +2440,7 @@ void nextDocFreqBlock(PostingsState* sub) {
 
 void nextPosBlock(PostingsState* sub) {
   sub->posBlockLastRead = -1;
-  printf("nextPosBlock posLeft=%d\n", sub->posLeft);
+  //printf("nextPosBlock posLeft=%d\n", sub->posLeft);
   if (sub->posLeft >= BLOCK_SIZE) {
     //printf("  nextBlock: packed\n");
     readPackedBlock(&sub->pos, sub->posDeltas);
@@ -2447,6 +2453,11 @@ void nextPosBlock(PostingsState* sub) {
     readVIntPosBlock(sub);
     sub->posLeft = 0;
   }
+  /*
+  for(int i=0;i<=sub->posBlockEnd;i++) {
+    printf("  posDelta[%d] = %d\n", i, sub->posDeltas[i]);
+  }
+  */
 }
 
 static bool
