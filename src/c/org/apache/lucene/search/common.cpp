@@ -2204,12 +2204,12 @@ static void decode31(unsigned long *blocks, unsigned int *values) {
 }
 
 
-static void readPackedBlock(PostingsState *sub, unsigned int *dest) {
-  unsigned char bitsPerValue = readByte(&(sub->docFreqs));
+static void readPackedBlock(unsigned char **p, unsigned int *dest) {
+  unsigned char bitsPerValue = readByte(p);
   //printf("\nreadPackedBlock bpv=%d\n", bitsPerValue);
   if (bitsPerValue == 0) {
     // All values equal
-    unsigned int v = readVInt(&sub->docFreqs);
+    unsigned int v = readVInt(p);
     for(int i=0;i<BLOCK_SIZE;i++) {
       dest[i] = v;
     }
@@ -2221,8 +2221,8 @@ static void readPackedBlock(PostingsState *sub, unsigned int *dest) {
     //x = (x+7) & ~7;
     //sub->p = (unsigned char *) x;
 
-    unsigned long *longBuffer = (unsigned long *) sub->docFreqs;
-    sub->docFreqs += numBytes;
+    unsigned long *longBuffer = (unsigned long *) *p;
+    *p += numBytes;
 
     // NOTE: Block PF uses PACKED_SINGLE_BLOCK for
     // bpv=1,2,4, else "ordinary" packed:
@@ -2337,8 +2337,8 @@ static void skipPackedBlock(unsigned char **p) {
   }
 }
 
-static void readVIntBlock(PostingsState *sub) {
-  //printf("  readVIntBlock: %d docs\n", sub->docsLeft);
+static void readVIntDocFreqBlock(PostingsState *sub) {
+  //printf("  readVIntDocFreqBlock: %d docs\n", sub->docsLeft);
   if (sub->docsOnly) {
     for(int i=0;i<sub->docsLeft;i++) {
       sub->docDeltas[i] = readVInt(&sub->docFreqs);
@@ -2368,7 +2368,29 @@ static void readVIntBlock(PostingsState *sub) {
   }
 }
 
-/*
+static void readVIntPosBlock(PostingsState *sub) {
+  //printf("  readVIntDocFreqBlock: %d docs\n", sub->docsLeft);
+  int payloadLength = 0;
+  for(int i=0;i<sub->posLeft;i++) {
+    unsigned int code = readVInt(&(sub->pos));
+    if (sub->indexHasPayloads) {
+      if ((code & 1) != 0) {
+        payloadLength = readVInt(&(sub->pos));
+      }
+      sub->posDeltas[i] = code >> 1;
+      sub->pos += payloadLength;
+    } else {
+      sub->posDeltas[i] = code;
+    }
+    if (sub->indexHasOffsets) {
+      if ((readVInt(&(sub->pos)) & 1) != 0) {
+        // offset length changed
+        readVInt(&(sub->pos));
+      }
+    }
+  }
+}
+
 void skipPositions(PostingsState *sub, long posCount) {
   long numToSkip = posCount - sub->posUpto;
   while (true) {
@@ -2378,22 +2400,23 @@ void skipPositions(PostingsState *sub, long posCount) {
       break;
     } else {
       numToSkip -= leftInBlock;
-      nexPosBlock(sub);
+      skipPackedBlock(&(sub->pos));
+      sub->posBlockLastRead = -1;
     }
   }
+  sub->posUpto = posCount;
 }
-*/
 
 void nextDocFreqBlock(PostingsState* sub) {
   sub->docFreqBlockLastRead = -1;
   if (sub->docsLeft >= BLOCK_SIZE) {
     //printf("  nextBlock: packed\n");
-    readPackedBlock(sub, sub->docDeltas);
+    readPackedBlock(&sub->docFreqs, sub->docDeltas);
     if (!sub->docsOnly) {
       if (sub->freqs == 0) {
         skipPackedBlock(&sub->docFreqs);
       } else {
-        readPackedBlock(sub, sub->freqs);
+        readPackedBlock(&sub->docFreqs, sub->freqs);
       }
     }
     sub->docsLeft -= BLOCK_SIZE;
@@ -2402,8 +2425,24 @@ void nextDocFreqBlock(PostingsState* sub) {
   } else {
     //printf("  nextBlock: vInt\n");
     sub->docFreqBlockEnd = sub->docsLeft-1;
-    readVIntBlock(sub);
+    readVIntDocFreqBlock(sub);
     sub->docsLeft = 0;
+  }
+}
+
+void nextPosBlock(PostingsState* sub) {
+  sub->posBlockLastRead = -1;
+  if (sub->posLeft >= BLOCK_SIZE) {
+    //printf("  nextBlock: packed\n");
+    readPackedBlock(&sub->pos, sub->posDeltas);
+    sub->posLeft -= BLOCK_SIZE;
+    // nocommit redundant?:  only needs to be done up front?
+    sub->posBlockEnd = BLOCK_SIZE-1;
+  } else {
+    //printf("  nextBlock: vInt\n");
+    sub->posBlockEnd = sub->posLeft-1;
+    readVIntPosBlock(sub);
+    sub->posLeft = 0;
   }
 }
 

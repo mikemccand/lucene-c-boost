@@ -40,11 +40,11 @@ typedef struct {
   int docFreqBlockLastRead;
   int docFreqBlockEnd;
 
-  // How many positions left
-  long posLeft;
-
   // Where (mapped in RAM) we decode positions from:
   unsigned char *pos;
+
+  // How many positions left
+  long posLeft;
 
   // Current block of position deltas:
   unsigned int *posDeltas;
@@ -53,11 +53,22 @@ typedef struct {
   //int nextPos;
   long posUpto;
 
+  bool indexHasPayloads;
+  bool indexHasOffsets;
+
+  // Used only by ExactPhraseQuery
+  unsigned long tfSum;
+  unsigned long *tfSums;
+  unsigned int *tfs;
+  int posLeftInDoc;
+  unsigned int nextPos;
+
   int id;
 } PostingsState;
 
 // exported from common.cpp:
 void nextDocFreqBlock(PostingsState* sub);
+void nextPosBlock(PostingsState* sub);
 void skipPositions(PostingsState *sub, long posCount);
 
 void downHeapNoScores(int heapSize, int *topDocIDs);
@@ -139,6 +150,23 @@ int booleanQueryShouldMustMustNot(PostingsState* subs,
                                   register float *coordFactors,
                                   register float *normTable,
                                   register unsigned char *norms);
+
+int phraseQuery(PostingsState* subs,
+                unsigned char *liveDocsBytes,
+                double *termScoreCache,
+                float termWeight,
+                register int maxDoc,
+                register int topN,
+                register int numScorers,
+                register int docBase,
+                register unsigned int *filled,
+                register int *docIDs,
+                register unsigned int *coords,
+                register float *topScores,
+                register int *topDocIDs,
+                register float *normTable,
+                register unsigned char *norms,
+                register int *posOffsets);
 
 bool isSet(unsigned char *bits, unsigned int docID);
 

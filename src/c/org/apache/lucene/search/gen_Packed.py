@@ -124,12 +124,12 @@ if __name__ == '__main__':
 
   f.write('''
 
-static void readPackedBlock(PostingsState *sub, unsigned int *dest) {
-  unsigned char bitsPerValue = readByte(&(sub->docFreqs));
+static void readPackedBlock(unsigned char **p, unsigned int *dest) {
+  unsigned char bitsPerValue = readByte(p);
   //printf("\\nreadPackedBlock bpv=%d\\n", bitsPerValue);
   if (bitsPerValue == 0) {
     // All values equal
-    unsigned int v = readVInt(&sub->docFreqs);
+    unsigned int v = readVInt(p);
     for(int i=0;i<BLOCK_SIZE;i++) {
       dest[i] = v;
     }
@@ -141,8 +141,8 @@ static void readPackedBlock(PostingsState *sub, unsigned int *dest) {
     //x = (x+7) & ~7;
     //sub->p = (unsigned char *) x;
 
-    unsigned long *longBuffer = (unsigned long *) sub->docFreqs;
-    sub->docFreqs += numBytes;
+    unsigned long *longBuffer = (unsigned long *) *p;
+    *p += numBytes;
 
     // NOTE: Block PF uses PACKED_SINGLE_BLOCK for
     // bpv=1,2,4, else "ordinary" packed:

@@ -1008,3 +1008,354 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
   env->ReleasePrimitiveArrayCritical(jtermStats, termStats, JNI_ABORT);
   env->ReleasePrimitiveArrayCritical(jbits, bits, JNI_ABORT);
 }
+
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_apache_lucene_search_NativeSearch_searchSegmentExactPhraseQuery
+  (JNIEnv *env,
+   jclass cl,
+
+   // PQ holding top hits so far, pre-filled with sentinel
+   // values: 
+   jintArray jtopDocIDs,
+   jfloatArray jtopScores,
+
+   // Current segment's maxDoc
+   jint maxDoc,
+
+   // Current segment's docBase
+   jint docBase,
+
+   // Current segment's liveDocs, or null:
+   jbyteArray jliveDocsBytes,
+
+   // weightValue from each TermWeight:
+   jfloat termWeight,
+
+   // Norms for the field (all TermQuery must be against a single field):
+   jbyteArray jnorms,
+
+   // nocommit silly to pass this once for each segment:
+   // Cache, mapping byte norm -> float
+   jfloatArray jnormTable,
+
+   // If the term has only one docID in this segment (it was
+   // "pulsed") then its set here, else -1:
+   jintArray jsingletonDocIDs,
+
+   jlongArray jtotalTermFreqs,
+
+   // docFreq of each term
+   jintArray jdocFreqs,
+
+   // Offset in the .doc file where this term's docs+freqs begin:
+   jlongArray jdocTermStartFPs,
+
+   // Offset in the .doc file where this term's docs+freqs begin:
+   jlongArray jposTermStartFPs,
+
+   jintArray jposOffsets,
+
+   // Address in memory where .doc file is mapped:
+   jlong docFileAddress,
+
+   // Address in memory where .pos file is mapped:
+   jlong posFileAddress,
+
+   jboolean indexHasPayloads,
+
+   jboolean indexHasOffsets)
+{
+  float *scores = 0;
+  int *docIDs = 0;
+  unsigned int *coords = 0;
+  bool failed = false;
+  unsigned char *skips = 0;
+  PostingsState *subs = 0;
+  int *singletonDocIDs = 0;
+  long *totalTermFreqs = 0;
+  long *docTermStartFPs = 0;
+  long *posTermStartFPs = 0;
+  int *docFreqs;
+  unsigned char *liveDocsBytes = 0;
+  unsigned char* norms = 0;
+  float *normTable = 0;
+  int *topDocIDs = 0;
+  float *topScores = 0;
+  unsigned int *filled = 0;
+  double *termScoreCache = 0;
+  unsigned char isCopy = 0;
+  int *posOffsets = 0;
+  int numScorers;
+  int topN;
+  int hitCount;
+
+  if (jtopScores == 0) {
+    scores = 0;
+  } else {
+    scores = (float *) malloc(CHUNK * sizeof(float));
+    if (scores == 0) {
+      failed = true;
+      goto end;
+    }
+  }
+  coords = (unsigned int *) malloc(CHUNK * sizeof(int));
+  if (coords == 0) {
+    failed = true;
+    goto end;
+  }
+
+  docIDs = (int *) malloc(CHUNK * sizeof(int));
+  if (docIDs == 0) {
+    failed = true;
+    goto end;
+  }
+  for(int i=0;i<CHUNK;i++) {
+    docIDs[i] = -1;
+  }
+
+  numScorers = env->GetArrayLength(jdocFreqs);
+
+  topN = env->GetArrayLength(jtopDocIDs) - 1;
+  //printf("topN=%d\n", topN);
+
+  subs = (PostingsState *) calloc(numScorers, sizeof(PostingsState));
+  if (subs == 0) {
+    failed = true;
+    goto end;
+  }
+  posOffsets = env->GetIntArrayElements(jposOffsets, 0);
+  if (posOffsets == 0) {
+    failed = true;
+    goto end;
+  }
+  singletonDocIDs = env->GetIntArrayElements(jsingletonDocIDs, 0);
+  if (singletonDocIDs == 0) {
+    failed = true;
+    goto end;
+  }
+  totalTermFreqs = env->GetLongArrayElements(jtotalTermFreqs, 0);
+  if (totalTermFreqs == 0) {
+    failed = true;
+    goto end;
+  }
+  docTermStartFPs = env->GetLongArrayElements(jdocTermStartFPs, 0);
+  if (docTermStartFPs == 0) {
+    failed = true;
+    goto end;
+  }
+  posTermStartFPs = env->GetLongArrayElements(jposTermStartFPs, 0);
+  if (posTermStartFPs == 0) {
+    failed = true;
+    goto end;
+  }
+  docFreqs = env->GetIntArrayElements(jdocFreqs, 0);
+  if (docFreqs == 0) {
+    failed = true;
+    goto end;
+  }
+
+  liveDocsBytes;
+  if (jliveDocsBytes == 0) {
+    liveDocsBytes = 0;
+  } else {
+    liveDocsBytes = (unsigned char *) env->GetPrimitiveArrayCritical(jliveDocsBytes, &isCopy);
+    if (liveDocsBytes == 0) {
+      failed = true;
+      goto end;
+    }
+    //printf("liveDocs isCopy=%d\n", isCopy);fflush(stdout);
+  }
+
+  isCopy = 0;
+  norms = (unsigned char *) env->GetPrimitiveArrayCritical(jnorms, &isCopy);
+  if (norms == 0) {
+    failed = true;
+    goto end;
+  }
+
+  isCopy = 0;
+  normTable = (float *) env->GetPrimitiveArrayCritical(jnormTable, &isCopy);
+  if (normTable == 0) {
+    failed = true;
+    goto end;
+  }
+
+  for(int i=0;i<numScorers;i++) {
+    PostingsState *sub = &(subs[i]);
+    sub->indexHasPayloads = indexHasPayloads;
+    sub->indexHasOffsets = indexHasOffsets;
+    sub->docsOnly = false;
+    sub->id = i;
+    //printf("init scorers[%d] of %d\n", i, numScorers);
+
+    if (singletonDocIDs[i] != -1) {
+      //printf("  singleton: %d\n", singletonDocIDs[i]);
+      sub->nextDocID = singletonDocIDs[i];
+      sub->docsLeft = 0;
+      sub->docFreqBlockLastRead = 0;
+      sub->docFreqBlockEnd = 0;
+      sub->docDeltas = 0;
+      sub->freqs = (unsigned int *) malloc(sizeof(int));
+      if (sub->freqs == 0) {
+        failed = true;
+        goto end;
+      }
+      sub->freqs[0] = (int) totalTermFreqs[i];
+    } else {
+      sub->docsLeft = docFreqs[i];
+      sub->docDeltas = (unsigned int *) malloc(2*BLOCK_SIZE*sizeof(int));
+      if (sub->docDeltas == 0) {
+        failed = true;
+        goto end;
+      }
+      // Locality seemed to help here:
+      sub->freqs = sub->docDeltas + BLOCK_SIZE;
+      //printf("docFileAddress=%ld startFP=%ld\n", docFileAddress, docTermStartFPs[i]);fflush(stdout);
+      sub->docFreqs = ((unsigned char *) docFileAddress) + docTermStartFPs[i];
+      //printf("  not singleton\n");
+      nextDocFreqBlock(sub);
+      sub->nextDocID = sub->docDeltas[0];
+      //printf("docDeltas[0]=%d\n", sub->docDeltas[0]);
+      sub->docFreqBlockLastRead = 0;
+    }
+    sub->pos = ((unsigned char *) posFileAddress) + posTermStartFPs[i];
+    sub->posLeft = totalTermFreqs[i];
+    sub->posDeltas = (unsigned int *) malloc(BLOCK_SIZE*sizeof(int));
+    if (sub->posDeltas == 0) {
+      failed = true;
+      goto end;
+    }
+    nextPosBlock(sub);
+    sub->posBlockLastRead = 0;
+    //printf("init i=%d nextDocID=%d freq=%d blockEnd=%d singleton=%d\n", i, sub->nextDocID, sub->nextFreq, sub->blockEnd, singletonDocIDs[i]);fflush(stdout);
+  }
+
+  // PQ holding top hits:
+  topDocIDs = (int *) env->GetIntArrayElements(jtopDocIDs, 0);
+  if (topDocIDs == 0) {
+    failed = true;
+    goto end;
+  }
+
+  if (jtopScores != 0) {
+    topScores = (float *) env->GetFloatArrayElements(jtopScores, 0);
+    if (topScores == 0) {
+      failed = true;
+      goto end;
+    }
+  } else {
+    topScores = 0;
+  }
+
+  filled = (unsigned int *) malloc(CHUNK * sizeof(int));
+  if (filled == 0) {
+    failed = true;
+    goto end;
+  }
+
+  termScoreCache = (double *) malloc(numScorers*sizeof(double));
+  if (termScoreCache == 0) {
+    failed = true;
+    goto end;
+  }
+  for(int j=0;j<TERM_SCORES_CACHE_SIZE;j++) {
+    termScoreCache[j] = termWeight * sqrt(j);
+  }
+
+  hitCount = phraseQuery(subs,
+                         liveDocsBytes,
+                         termScoreCache,
+                         termWeight,
+                         maxDoc,
+                         topN,
+                         numScorers,
+                         docBase,
+                         filled,
+                         docIDs,
+                         coords,
+                         topScores,
+                         topDocIDs,
+                         normTable,
+                         norms,
+                         posOffsets);
+  if (hitCount == -1) {
+    failed = true;
+  }
+
+ end:
+
+  if (norms != 0) {
+    env->ReleasePrimitiveArrayCritical(jnorms, norms, JNI_ABORT);
+  }
+  if (liveDocsBytes != 0) {
+    env->ReleasePrimitiveArrayCritical(jliveDocsBytes, liveDocsBytes, JNI_ABORT);
+  }
+  if (normTable != 0) {
+    env->ReleasePrimitiveArrayCritical(jnormTable, normTable, JNI_ABORT);
+  }
+  if (posOffsets != 0) {
+    env->ReleaseIntArrayElements(jposOffsets, posOffsets, JNI_ABORT);
+  }
+  if (singletonDocIDs != 0) {
+    env->ReleaseIntArrayElements(jsingletonDocIDs, singletonDocIDs, JNI_ABORT);
+  }
+  if (totalTermFreqs != 0) {
+    env->ReleaseLongArrayElements(jtotalTermFreqs, totalTermFreqs, JNI_ABORT);
+  }
+  if (docTermStartFPs != 0) {
+    env->ReleaseLongArrayElements(jdocTermStartFPs, docTermStartFPs, JNI_ABORT);
+  }
+  if (posTermStartFPs != 0) {
+    env->ReleaseLongArrayElements(jposTermStartFPs, posTermStartFPs, JNI_ABORT);
+  }
+  if (docFreqs != 0) {
+    env->ReleaseIntArrayElements(jdocFreqs, docFreqs, JNI_ABORT);
+  }
+  if (topDocIDs != 0) {
+    env->ReleaseIntArrayElements(jtopDocIDs, topDocIDs, 0);
+  }
+  if (topScores != 0) {
+    env->ReleaseFloatArrayElements(jtopScores, topScores, 0);
+  }
+  if (termScoreCache != 0) {
+    free(termScoreCache);
+  }
+  if (filled != 0) {
+    free(filled);
+  }
+  if (docIDs != 0) {
+    free(docIDs);
+  }
+  if (skips != 0) {
+    free(skips);
+  }
+  if (scores != 0) {
+    free(scores);
+  }
+  if (coords != 0) {
+    free(coords);
+  }
+  if (subs != 0) {
+    for(int i=0;i<numScorers;i++) {
+      PostingsState *sub = &(subs[i]);
+      if (sub->docDeltas != 0) {
+        free(sub->docDeltas);
+      } else if (sub->freqs != 0) {
+        free(sub->freqs);
+      }
+      if (sub->posDeltas != 0) {
+        free(sub->posDeltas);
+      }
+    }
+
+    free(subs);
+  }
+
+  if (failed) {
+    jclass c = env->FindClass("java/lang/OutOfMemoryError");
+    env->ThrowNew(c, "failed to allocate temporary memory");
+    return -1;
+  }
+  return hitCount;
+}

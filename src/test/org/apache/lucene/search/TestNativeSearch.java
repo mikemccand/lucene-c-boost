@@ -731,4 +731,26 @@ public class TestNativeSearch extends LuceneTestCase {
     r.close();
     dir.close();
   }
+
+  public void testExactPhraseQuery() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    Document doc = new Document();
+    doc.add(new TextField("field", "the doc", Field.Store.NO));
+    w.addDocument(doc);
+
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+
+    IndexSearcher s = new IndexSearcher(r);
+    PhraseQuery q = new PhraseQuery();
+    q.add(new Term("field", "the"));
+    q.add(new Term("field", "doc"));
+    assertSameHits(s, q);
+    r.close();
+    dir.close();
+  }
 }

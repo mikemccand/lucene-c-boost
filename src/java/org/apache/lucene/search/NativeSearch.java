@@ -38,6 +38,7 @@ import org.apache.lucene.codecs.lucene41.Lucene41PostingsFormat;
 import org.apache.lucene.codecs.lucene42.Lucene42NormsFormat;
 import org.apache.lucene.codecs.perfield.PerFieldPostingsFormat;
 import org.apache.lucene.index.AtomicReaderContext;
+import org.apache.lucene.index.DocsAndPositionsEnum;
 import org.apache.lucene.index.DocsEnum;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.Fields;
@@ -118,6 +119,59 @@ public class NativeSearch {
       int numMustNot,
 
       int numMust);
+
+  private static native int searchSegmentExactPhraseQuery(
+      // PQ holding top hits so far, pre-filled with sentinel
+      // values: 
+      int[] topDocIDs,
+      float[] topScores,
+
+      // Current segment's maxDoc
+      int maxDoc,
+
+      // Current segment's docBase
+      int docBase,
+
+      // Current segment's liveDocs, or null:
+      byte[] liveDocsBytes,
+      
+      // weightValue from each TermWeight:
+      float termWeight,
+
+      // Norms for the field (all TermQuery must be against a single field):
+      byte[] norms,
+
+      // nocommit silly to pass this once for each segment:
+      // Cache, mapping byte norm -> float
+      float[] normTable,
+
+      // If the term has only one docID in this segment (it was "pulsed") then its set here, else -1:
+      int[] singletonDocIDs,
+
+      long[] totalTermFreqs,
+
+      // docFreq of each term
+      int[] docFreqs,
+      
+      // Offset in the .doc file where this term's docs+freqs begin:
+      long[] docTermStartFPs,
+
+      // Offset in the .pos file where this term's positions begin:
+      long[] posTermStartFPs,
+
+      // Offset of each term in the phrase (first term is 0,
+      // 2nd is -1, ...):
+      int[] posOffsets,
+
+      // Address in memory where .doc file is mapped:
+      long docFileAddress,
+
+      // Address in memory where .pos file is mapped:
+      long posFileAddress,
+
+      boolean indexHasPayloads,
+
+      boolean indexHasOffsets);
 
   private static native int searchSegmentTermQuery(
       // PQ holding top hits so far, pre-filled with sentinel
@@ -285,6 +339,8 @@ public class NativeSearch {
 
     if (query instanceof TermQuery) {
       return _searchTermQuery(searcher, (TermQuery) query, topN, constantScore);
+    } else if (query instanceof PhraseQuery) {
+      return _searchPhraseQuery(searcher, (PhraseQuery) query, topN, constantScore);
     } else if (query instanceof BooleanQuery) {
       return _searchBooleanQuery(searcher, (BooleanQuery) query, topN, constantScore);
     } else {
@@ -511,6 +567,28 @@ public class NativeSearch {
     }
   }
 
+  private static int getIntField(Object o, String className, String fieldName) {
+    try {
+      Class<?> x = Class.forName(className);
+      Field f = x.getDeclaredField(fieldName);
+      f.setAccessible(true);
+      return f.getInt(o);
+    } catch (Exception e) {
+      throw new RuntimeException("failed to get field=" + fieldName + " from class=" + className + " object=" + o, e);
+    }
+  }
+
+  private static long getLongField(Object o, String className, String fieldName) {
+    try {
+      Class<?> x = Class.forName(className);
+      Field f = x.getDeclaredField(fieldName);
+      f.setAccessible(true);
+      return f.getLong(o);
+    } catch (Exception e) {
+      throw new RuntimeException("failed to get field=" + fieldName + " from class=" + className + " object=" + o, e);
+    }
+  }
+
   private static MultiTermQuery getMultiTermQueryWrapperFilterQuery(MultiTermQueryWrapperFilter filter) {
     try {
       Class<?> x = Class.forName("org.apache.lucene.search.MultiTermQueryWrapperFilter");
@@ -583,7 +661,7 @@ public class NativeSearch {
       if (scorer != null) {
 
         //System.out.println("    got scorer");
-        float termWeight = getTermWeight(scorer);
+        float termWeight = getTermScorerTermWeight(scorer);
 
         int singletonDocID;
         long totalTermFreq;
@@ -625,6 +703,129 @@ public class NativeSearch {
                                             docFreq,
                                             docTermStartFP,
                                             address);
+      }
+    }
+
+    return buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore);
+  }
+
+  private static TopDocs _searchPhraseQuery(IndexSearcher searcher, PhraseQuery query, int topN, float constantScore) throws IOException {
+
+    List<AtomicReaderContext> leaves = searcher.getIndexReader().leaves();
+    //System.out.println("_searchTermQuery: " + leaves.size() + " segments; query=" + query);
+    //new Throwable().printStackTrace(System.out);
+    Similarity sim = searcher.getSimilarity();
+
+    if (!(sim instanceof DefaultSimilarity)) {
+      throw new IllegalArgumentException("searcher.getSimilarity() must be DefaultSimilarity; got: " + sim);
+    }
+
+    String field = (String) getField(query, "org.apache.lucene.search.PhraseQuery", "field");
+
+    Weight w = searcher.createNormalizedWeight(query);
+
+    float[] topScores;
+    if (constantScore < 0.0f) {
+      topScores = new float[topN+1];
+      Arrays.fill(topScores, Float.MIN_VALUE);
+    } else {
+      topScores = null;
+    }
+
+    int[] topDocIDs = new int[topN+1];
+    Arrays.fill(topDocIDs, Integer.MAX_VALUE);
+
+    int totalHits = 0;
+
+    float[] normTable = getNormTable();
+
+    for(int readerIDX=0;readerIDX<leaves.size();readerIDX++) {
+      AtomicReaderContext ctx = leaves.get(readerIDX);
+      SegmentState state = new SegmentState(ctx, field);
+      if (state.normBytes == null) {
+        throw new IllegalArgumentException("cannot handle omitNorms field");
+      }
+      if (state.skip) {
+        continue;
+      }
+
+      FieldInfo fieldInfo = state.reader.getFieldInfos().fieldInfo(field);
+
+      boolean indexHasOffsets = fieldInfo.getIndexOptions().compareTo(FieldInfo.IndexOptions.DOCS_AND_FREQS_AND_POSITIONS_AND_OFFSETS) >= 0;
+      
+      boolean indexHasPayloads = fieldInfo.hasPayloads();
+
+      Scorer scorer = w.scorer(ctx, true, false, state.liveDocs);
+      if (scorer != null) {
+
+        //System.out.println("    got scorer");
+        float termWeight = getExactPhraseScorerTermWeight(scorer);
+
+        Object[] chunkStates = (Object[]) getField(scorer, "org.apache.lucene.search.ExactPhraseScorer", "chunkStates");
+
+        long[] docTermStartFPs = new long[chunkStates.length];
+        long[] posTermStartFPs = new long[chunkStates.length];
+        int[] singletonDocIDs = new int[chunkStates.length];
+        int[] docFreqs = new int[chunkStates.length];
+        int[] posOffsets = new int[chunkStates.length];
+        long[] totalTermFreqs = new long[chunkStates.length];
+        long docFreqAddress = 0;
+        long posAddress = 0;
+
+        for(int i=0;i<chunkStates.length;i++) {
+          DocsAndPositionsEnum posEnum = (DocsAndPositionsEnum) getField(chunkStates[i],
+                                                                         "org.apache.lucene.search.ExactPhraseScorer$ChunkState",
+                                                                         "posEnum");
+          posOffsets[i] = getIntField(chunkStates[i],
+                                      "org.apache.lucene.search.ExactPhraseScorer$ChunkState",
+                                      "offset");
+          System.out.println("posOffset=" + posOffsets[i]);
+          if (posEnum.getClass().getName().indexOf("Lucene41PostingsReader") == -1 ||
+              posEnum.getClass().getName().indexOf("BlockDocsAndPositionsEnum") == -1) {
+            throw new IllegalArgumentException("must use Lucene41PostingsFormat; got " + posEnum.getClass().getName());
+          }
+
+          docFreqs[i] = getIntField(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "docFreq");
+          totalTermFreqs[i] = getLongField(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "totalTermFreq");
+          docTermStartFPs[i] = getLongField(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "docTermStartFP");
+          posTermStartFPs[i] = getLongField(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "posTermStartFP");
+
+          if (posAddress == 0) {
+            IndexInput posIn = (IndexInput) getField(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "posIn");
+            posAddress = getMMapAddress(posIn);
+          }
+          if (docFreqs[i] > 1) {
+            singletonDocIDs[i] = -1;
+            if (docFreqAddress == 0) {
+              IndexInput docIn = (IndexInput) getField(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "startDocIn");
+              docFreqAddress = getMMapAddress(docIn);
+            }
+          } else {
+            // Pulsed
+            singletonDocIDs[i] = getIntField(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "singletonDocID");
+            assert singletonDocIDs[i] >= 0;
+            assert singletonDocIDs[i] < state.maxDoc;
+          }
+        }
+
+        totalHits += searchSegmentExactPhraseQuery(topDocIDs,
+                                                   topScores,
+                                                   state.maxDoc,
+                                                   ctx.docBase,
+                                                   state.liveDocsBytes,
+                                                   termWeight,
+                                                   state.normBytes,
+                                                   normTable,
+                                                   singletonDocIDs,
+                                                   totalTermFreqs,
+                                                   docFreqs,
+                                                   docTermStartFPs,
+                                                   posTermStartFPs,
+                                                   posOffsets,
+                                                   docFreqAddress,
+                                                   posAddress,
+                                                   indexHasPayloads,
+                                                   indexHasOffsets);
       }
     }
 
@@ -747,9 +948,10 @@ public class NativeSearch {
         final int[] docFreqs = new int[scorers.size()];
         final long[] docTermStartFPs = new long[scorers.size()];
         long address = 0;
+
         for(int i=0;i<scorers.size();i++) {
           Scorer scorer = scorers.get(i);
-          termWeights[i] = getTermWeight(scorer);
+          termWeights[i] = getTermScorerTermWeight(scorer);
           DocsEnum docsEnum = unwrap(getDocsEnum(scorer));
           if (docsEnum.getClass().getName().indexOf("Lucene41PostingsReader") == -1) {
             throw new IllegalArgumentException("must use Lucene41PostingsFormat; got " + docsEnum.getClass().getName());
@@ -1093,7 +1295,24 @@ public class NativeSearch {
     }
   }
 
-  private static float getTermWeight(Scorer scorer) {
+  private static float getExactPhraseScorerTermWeight(Scorer scorer) {
+    try {
+      Class<?> x = Class.forName("org.apache.lucene.search.ExactPhraseScorer");
+      Field f = x.getDeclaredField("docScorer");
+      f.setAccessible(true);
+      Object o = f.get(scorer);
+      // 4.4:
+      //Class<?> y = Class.forName("org.apache.lucene.search.similarities.TFIDFSimilarity$TFIDFSimScorer");
+      Class<?> y = Class.forName("org.apache.lucene.search.similarities.TFIDFSimilarity$ExactTFIDFDocScorer");
+      Field weightsField = y.getDeclaredField("weightValue");
+      weightsField.setAccessible(true);
+      return weightsField.getFloat(o);
+    } catch (Exception e) {
+      throw new IllegalStateException("reflection failed", e);
+    }
+  }
+
+  private static float getTermScorerTermWeight(Scorer scorer) {
     try {
       Class<?> x = Class.forName("org.apache.lucene.search.TermScorer");
       Field f = x.getDeclaredField("docScorer");

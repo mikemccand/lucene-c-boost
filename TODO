@@ -28,6 +28,14 @@ hmm TermsFilter?
 
 hmm BooleanFilter?
 
+remove register XXX
+
+add test: termquery DOCS_ONLY: it should work but won't for silly reason...
+
+instead of docIDs[slot] we can do docUpto + slot!  saves a mem ref, but adds an add
+
+hmm only the LAST must clause needs to fill in numFilled!  don't bother filling for first N-1
+
 PQ
   - constant score query wrapped around it?
 
