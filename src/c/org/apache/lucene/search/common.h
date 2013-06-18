@@ -19,7 +19,7 @@
 
 #define TERM_SCORES_CACHE_SIZE 32
 
-#define CHUNK 2048
+#define CHUNK 1024
 #define MASK (CHUNK-1)
 
 #define NO_MORE_DOCS 2147483647
