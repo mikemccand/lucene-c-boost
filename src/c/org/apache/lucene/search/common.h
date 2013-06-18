@@ -170,5 +170,10 @@ int phraseQuery(PostingsState* subs,
 
 bool isSet(unsigned char *bits, unsigned int docID);
 
-//#define printf NO
-//#define fflush NO
+//#define DEBUG
+
+#ifndef DEBUG
+#define printf NO
+#define fflush NO
+#endif
+

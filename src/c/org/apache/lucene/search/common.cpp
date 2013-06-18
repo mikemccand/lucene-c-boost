@@ -2204,7 +2204,6 @@ static void decode31(unsigned long *blocks, unsigned int *values) {
   }
 }
 
-
 static void readPackedBlock(unsigned char **p, unsigned int *dest) {
   unsigned char bitsPerValue = readByte(p);
   //printf("\nreadPackedBlock bpv=%d\n", bitsPerValue);
@@ -2321,7 +2320,6 @@ static void readPackedBlock(unsigned char **p, unsigned int *dest) {
       case 31:
         decode31(longBuffer, dest);
         break;
-
     }
   }
 }
@@ -2395,22 +2393,24 @@ static void readVIntPosBlock(PostingsState *sub) {
 
 void skipPositions(PostingsState *sub, long posCount) {
   long numToSkip = posCount - sub->posUpto;
-  //printf("skipPositions: %d\n", numToSkip);
+  //printf("skipPositions: %d; posLeft=%d\n", numToSkip, sub->posLeft);
   int leftInBlock = sub->posBlockEnd - sub->posBlockLastRead;
   if (numToSkip <= leftInBlock) {
     //printf("  skip w/in block\n");
     sub->posBlockLastRead += numToSkip;
   } else {
+    // TODO: we could do partial decode here...
     numToSkip -= leftInBlock;
-    //printf("  skip rest of this block\n");
-    while (numToSkip >= BLOCK_SIZE) {
+    //printf("  skip rest of this block (%d)\n", leftInBlock);
+    while (numToSkip >= 1+BLOCK_SIZE) {
       numToSkip -= BLOCK_SIZE;
+      sub->posLeft -= BLOCK_SIZE;
       //printf("  skip whole block\n");
       skipPackedBlock(&(sub->pos));
     }
     nextPosBlock(sub);
     //printf("  skip part of last block (%d)\n", numToSkip);
-    sub->posBlockLastRead += numToSkip;
+    sub->posBlockLastRead = numToSkip-1;
   }
   sub->posUpto = posCount;
 }
@@ -2442,13 +2442,13 @@ void nextPosBlock(PostingsState* sub) {
   sub->posBlockLastRead = -1;
   //printf("nextPosBlock posLeft=%d\n", sub->posLeft);
   if (sub->posLeft >= BLOCK_SIZE) {
-    //printf("  nextBlock: packed\n");
+    //printf("  packed\n");
     readPackedBlock(&sub->pos, sub->posDeltas);
     sub->posLeft -= BLOCK_SIZE;
     // nocommit redundant?:  only needs to be done up front?
     sub->posBlockEnd = BLOCK_SIZE-1;
   } else {
-    //printf("  nextBlock: vInt\n");
+    //printf("  vInt\n");
     sub->posBlockEnd = sub->posLeft-1;
     readVIntPosBlock(sub);
     sub->posLeft = 0;

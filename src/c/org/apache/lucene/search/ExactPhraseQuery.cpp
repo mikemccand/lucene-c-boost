@@ -18,10 +18,9 @@
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "common.h"
-
-// #define DEBUG
 
 static void
 orFirstMustChunk(PostingsState *sub,
@@ -47,13 +46,13 @@ orFirstMustChunk(PostingsState *sub,
   while (nextDocID < endDoc) {
     int slot = nextDocID & MASK;
     docIDs[slot] = nextDocID;
-    tfSums[slot] = tfSum;
+    coords[slot] = 1;
     unsigned int freq = freqs[blockLastRead];
 #ifdef DEBUG
     printf("  docID=%d freq=%d tfSum=%d\n", nextDocID, freq, tfSum);
 #endif
     tfs[slot] = freq;
-    coords[slot] = 1;
+    tfSums[slot] = tfSum;
     tfSum += freq;
 
     // Inlined nextDoc:
@@ -261,21 +260,12 @@ int phraseQuery(PostingsState* subs,
   unsigned int *positions = 0;
   int docUpto = 0;
   int hitCount = 0;
+  int countUpto = 1;
 
-  posCounts = (unsigned int *) malloc(POS_CHUNK * sizeof(int));
+  posCounts = (unsigned int *) calloc(POS_CHUNK, sizeof(int));
   if (posCounts == 0) {
     failed = true;
     goto end;
-  }
-
-  positions = (unsigned int *) malloc(POS_CHUNK * sizeof(int));
-  if (positions == 0) {
-    failed = true;
-    goto end;
-  }
-
-  for(int i=0;i<POS_CHUNK;i++) {
-    positions[i] = -1;
   }
 
   for(int i=0;i<numScorers;i++) {
@@ -315,6 +305,7 @@ int phraseQuery(PostingsState* subs,
 #ifdef DEBUG
       printf("\ncheck positions slot=%d docID=%d\n", slot, docIDs[slot]);
 #endif
+      //printf("    docID=%d\n", docIDs[slot]);fflush(stdout);
 
       // This doc has all of the terms, now check their
       // positions:
@@ -330,7 +321,8 @@ int phraseQuery(PostingsState* subs,
 #endif
         skipPositions(sub, sub->tfSums[slot]);
 #ifdef DEBUG
-        printf("    posBlockLastRead=%d\n", sub->posBlockLastRead);
+        printf("    posBlockLastRead=%d posDelta=%d nextPosDelta=%d\n", sub->posBlockLastRead, sub->posDeltas[sub->posBlockLastRead],
+               sub->posDeltas[sub->posBlockLastRead+1]);
 #endif
         sub->nextPos = posOffsets[j] + sub->posDeltas[sub->posBlockLastRead];
 #ifdef DEBUG
@@ -354,7 +346,11 @@ int phraseQuery(PostingsState* subs,
 #ifdef DEBUG
         printf("  cycle posUpto=%d\n", posUpto);
 #endif
-
+        if (countUpto + numScorers + 1 < countUpto) {
+          // Wrap-around
+          countUpto = 1;
+          memset(posCounts, 0, POS_CHUNK*sizeof(int));
+        }
         PostingsState *sub = subs;
 
         int endPos = posUpto + POS_CHUNK;
@@ -367,13 +363,16 @@ int phraseQuery(PostingsState* subs,
 
         while (pos < endPos) {
           int posSlot = pos & POS_MASK;
-          positions[posSlot] = pos;
-          posCounts[posSlot] = 1;
+          posCounts[posSlot] = countUpto;
 #ifdef DEBUG
           printf("scorer[0] nextPos=%d\n", pos);
 #endif
 
           if (--sub->posLeftInDoc == 0) {
+#ifdef DEBUG
+            printf("  done: no more positions\n");
+#endif
+            posBlockLastRead++;
             done = true;
             break;
           }
@@ -387,12 +386,13 @@ int phraseQuery(PostingsState* subs,
             posBlockEnd = sub->posBlockEnd;
           }
 #ifdef DEBUG
-          printf("  add posDeltas[%d]=%d\n", 1+posBlockLastRead, posDeltas[1+posBlockLastRead]);
+          printf("  add posDeltas[%d]=%d\n", 1+posBlockLastRead,
+                 posDeltas[1+posBlockLastRead]);fflush(stdout);
 #endif
           pos += posDeltas[++posBlockLastRead];
         }
 
-        sub->posBlockLastRead = posBlockLastRead+1;
+        sub->posBlockLastRead = posBlockLastRead;
         sub->nextPos = pos;
 
         // Middle terms in phrase:
@@ -407,11 +407,14 @@ int phraseQuery(PostingsState* subs,
 #ifdef DEBUG
             printf("scorer[%d] nextPos=%d\n", i, pos);
 #endif
-            int posSlot = pos & POS_MASK;
-            if (positions[posSlot] == pos) {
-              posCounts[posSlot]++;
+            if (pos >= 0) {
+              int posSlot = pos & POS_MASK;
+              if (posCounts[posSlot] == countUpto) {
+                posCounts[posSlot]++;
+              }
             }
             if (--sub->posLeftInDoc == 0) {
+              posBlockLastRead++;
               done = true;
               break;
             }
@@ -422,12 +425,13 @@ int phraseQuery(PostingsState* subs,
             }
             pos += posDeltas[++posBlockLastRead];
           }
-          sub->posBlockLastRead = posBlockLastRead+1;
+          sub->posBlockLastRead = posBlockLastRead;
           sub->nextPos = pos;
+          countUpto++;
         }
 
         // Last term in phrase:
-        sub = subs + numScorers-1;
+        sub = subs + (numScorers-1);
         posBlockLastRead = sub->posBlockLastRead;
         posDeltas = sub->posDeltas;
         posBlockEnd = sub->posBlockEnd;
@@ -435,42 +439,47 @@ int phraseQuery(PostingsState* subs,
 
         while (pos < endPos) {
 #ifdef DEBUG
-          printf("scorer[%d] nextPos=%d\n", numScorers-1, pos);
+          printf("scorer[%d] nextPos=%d\n", numScorers-1, pos);fflush(stdout);
 #endif
-          int posSlot = pos & POS_MASK;
-          if (positions[posSlot] == pos && posCounts[posSlot] == numScorers-1) {
+          if (pos >= 0) {
+            int posSlot = pos & POS_MASK;
+            if (posCounts[posSlot] == countUpto) {
 #ifdef DEBUG
-            printf("  match!\n");
+              printf("  match pos=%d slot=%d\n", pos, posSlot);fflush(stdout);
 #endif
-            phraseFreq++;
-            if (topScores == 0) {
-              // ConstantScoreQuery(PhraseQuery), so we can
-              // stop & collect hit as soon as we find one
-              // phrase match
-              done = true;
-              break;
+              phraseFreq++;
+              if (topScores == 0) {
+                // ConstantScoreQuery(PhraseQuery), so we can
+                // stop & collect hit as soon as we find one
+                // phrase match
+                done = true;
+                break;
+              }
             }
           }
 
           if (--sub->posLeftInDoc == 0) {
+            posBlockLastRead++;
             done = true;
             break;
           }
 
           if (posBlockLastRead == posBlockEnd) {
-            if (sub->posLeft = 0) {
-              done = true;
-              break;
-            } else {
-              nextPosBlock(sub);
-              posBlockLastRead = -1;
-              posBlockEnd = sub->posBlockEnd;
-            }
+#ifdef DEBUG
+            printf("  nextPosBlock: posBlockEnd=%d\n", posBlockEnd);
+#endif
+            nextPosBlock(sub);
+            posBlockLastRead = -1;
+            posBlockEnd = sub->posBlockEnd;
           }
+#ifdef DEBUG
+          printf("  add posDeltas[%d]=%d\n", 1+posBlockLastRead, posDeltas[1+posBlockLastRead]);fflush(stdout);
+#endif
           pos += posDeltas[++posBlockLastRead];
         }
 
-        sub->posBlockLastRead = posBlockLastRead+1;
+        countUpto++;
+        sub->posBlockLastRead = posBlockLastRead;
         sub->nextPos = pos;
 
         if (done) {
@@ -482,17 +491,26 @@ int phraseQuery(PostingsState* subs,
 
       for(int j=0;j<numScorers;j++) {
         PostingsState *sub = subs+j;
+#ifdef DEBUG
+        printf("add posUpto[%d]: %d; posLeftInDoc %d\n", j, sub->tfs[slot] - sub->posLeftInDoc, sub->posLeftInDoc);
+#endif
         sub->posUpto += sub->tfs[slot] - sub->posLeftInDoc;
       }
 
       if (phraseFreq != 0) {
+        //printf("      freq=%d\n", phraseFreq);fflush(stdout);
+
 #ifdef DEBUG
-        printf("  phraseFreq=%d\n", phraseFreq);
+        printf("  phraseFreq=%d\n", phraseFreq);fflush(stdout);
 #endif
 
         hitCount++;
 
         int docID = docBase + docIDs[slot];
+
+#ifdef DEBUG
+        printf("  now collect\n");fflush(stdout);
+#endif
 
         // collect
         if (topScores == 0) {
@@ -532,9 +550,6 @@ int phraseQuery(PostingsState* subs,
   }
 
  end:
-  if (positions != 0) {
-    free(positions);
-  }
   if (posCounts != 0) {
     free(posCounts);
   }
@@ -553,5 +568,3 @@ int phraseQuery(PostingsState* subs,
     return hitCount;
   }
 }
-
-

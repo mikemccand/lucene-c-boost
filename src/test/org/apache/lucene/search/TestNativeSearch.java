@@ -39,7 +39,18 @@ import org.apache.lucene.util._TestUtil;
 
 public class TestNativeSearch extends LuceneTestCase {
 
+  private void printTopDocs(TopDocs hits) {
+    System.out.println("  maxScore=" + hits.getMaxScore() + " totalHits=" + hits.totalHits);
+    for(int i=0;i<hits.scoreDocs.length;i++) {
+      System.out.println("  hit " + i + ": " + hits.scoreDocs[i]);
+    }
+  }
+
   private void assertSameHits(TopDocs expected, TopDocs actual) {
+    //System.out.println("expected hits:");
+    //printTopDocs(expected);
+    //System.out.println("actual hits:");
+    //printTopDocs(actual);
     assertEquals(expected.totalHits, actual.totalHits);
     assertEquals(expected.getMaxScore(), actual.getMaxScore(), 0.000001f);
     assertEquals(expected.scoreDocs.length, actual.scoreDocs.length);
@@ -820,6 +831,68 @@ public class TestNativeSearch extends LuceneTestCase {
       } else {
         doc.add(new TextField("field", "doc", Field.Store.NO));
       }
+      w.addDocument(doc);
+    }
+
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+
+    IndexSearcher s = new IndexSearcher(r);
+    PhraseQuery q = new PhraseQuery();
+    q.add(new Term("field", "the"));
+    q.add(new Term("field", "doc"));
+    assertSameHits(s, q);
+    r.close();
+    dir.close();
+  }
+
+  public void testExactPhraseQuery5() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+    for(int docUpto=0;docUpto<100;docUpto++) {
+      //System.out.println("\nTEST: doc=" + docUpto);
+      StringBuilder sb = new StringBuilder();
+      int numTokens = 10000;
+      boolean lastThe = false;
+      int matchCount = 0;
+      for(int i=0;i<numTokens;i++) {
+        switch(random().nextInt(5)) {
+        case 0:
+          sb.append(" foo");
+          lastThe = false;
+          break;
+        case 1:
+          sb.append(" bar");
+          lastThe = false;
+          break;
+        case 2:
+          sb.append(" the");
+          //System.out.println("the-pos " + i);
+          lastThe = true;
+          break;
+        case 3:
+          sb.append(" doc");
+          //System.out.println("doc-pos " + i);
+          if (lastThe) {
+            //System.out.println("match @ pos=" + (i-1));
+            matchCount++;
+          }
+          lastThe = false;
+          break;
+        case 4:
+          sb.append(" baz");
+          lastThe = false;
+          break;
+        }
+      }
+      //System.out.println("  " + matchCount + " matches");
+      Document doc = new Document();
+      String sf = sb.toString();
+      //System.out.println("field=" + sf);
+      doc.add(new TextField("field", sf, Field.Store.NO));
       w.addDocument(doc);
     }
 

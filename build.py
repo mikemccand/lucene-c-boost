@@ -95,7 +95,7 @@ if newer(cSources, nativeSearchLib):
   # -ftree-vectorizer-verbose=3
   # -march=corei7
   print('\nCompile NativeSearch.cpp')
-  run('g++ -g -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (nativeSearchLib, JAVA_HOME, JAVA_HOME, ' '.join(cSources)))
+  run('g++ -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (nativeSearchLib, JAVA_HOME, JAVA_HOME, ' '.join(cSources)))
 
 mmapSource = 'src/c/org/apache/lucene/store/NativeMMapDirectory.cpp'
 mmapLib = 'dist/libNativeMMapDirectory.so'
@@ -103,16 +103,17 @@ if newer(mmapSource, mmapLib):
   print('\nCompile NativeMMapDirectory.cpp')
   run('g++ -g -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (mmapLib, JAVA_HOME, JAVA_HOME, mmapSource))
 
-print('\nCompile java sources')
-if not os.path.exists('build/classes/java'):
-  os.makedirs('build/classes/java')
-run('javac -XDignore.symbol.file -d build/classes/java -cp %s src/java/org/apache/lucene/store/*.java src/java/org/apache/lucene/search/*.java' % toClassPath(DEPS))
-run('jar cf dist/luceneCBoost-SNAPSHOT.jar -C build/classes/java .')
+if True:
+  print('\nCompile java sources')
+  if not os.path.exists('build/classes/java'):
+    os.makedirs('build/classes/java')
+  run('javac -XDignore.symbol.file -d build/classes/java -cp %s src/java/org/apache/lucene/store/*.java src/java/org/apache/lucene/search/*.java' % toClassPath(DEPS))
+  run('jar cf dist/luceneCBoost-SNAPSHOT.jar -C build/classes/java .')
 
-if not os.path.exists('build/classes/test'):
-  os.makedirs('build/classes/test')
+  if not os.path.exists('build/classes/test'):
+    os.makedirs('build/classes/test')
 
-run('javac -d build/classes/test -cp %s:dist/luceneCBoost-SNAPSHOT.jar src/test/org/apache/lucene/search/*.java' % toClassPath(DEPS + TEST_DEPS))
+  run('javac -d build/classes/test -cp %s:dist/luceneCBoost-SNAPSHOT.jar src/test/org/apache/lucene/search/*.java' % toClassPath(DEPS + TEST_DEPS))
 
 if True:
   print('\nRun tests')
@@ -124,7 +125,7 @@ if True:
   command += ' -DtempDir=build/test'
   command += ' -Dtests.codec=Lucene42'
   command += ' -Dtests.directory=NativeMMapDirectory'
-  command += ' -Dtests.seed=0'
+  #command += ' -Dtests.seed=7C04447972B1872'
   if len(sys.argv) != 1:
     command += ' -Dtests.method=%s' % sys.argv[1]
   command += ' org.junit.runner.JUnitCore'
@@ -136,7 +137,7 @@ if True:
     s = p.stdout.readline()
     if s == b'':
       break
-    print(s.decode('utf-8').rstrip())
+    print(s.decode('utf-8', errors='ignore').rstrip())
   p.wait()
   if p.returncode != 0:
     raise RuntimeError('test failed')

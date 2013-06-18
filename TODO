@@ -37,6 +37,9 @@ instead of docIDs[slot] we can do docUpto + slot!  saves a mem ref, but adds an 
 hmm only the LAST must clause needs to fill in numFilled!  don't bother filling for first N-1
 
 PQ
+  - why do we have both posUpto and posLeft?
+  - must add the pos > lastPos check for same term at same position in a row!!
+  - reverse the score function and don't consider a doc that cannot possible have high enough phraseFreq to compete w/ bottom
   - how should we sort the terms?
   - constant score query wrapped around it?
   - check positinos inside orLastMustChunk instead

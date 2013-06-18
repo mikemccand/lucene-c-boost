@@ -711,6 +711,10 @@ public class NativeSearch {
 
   private static TopDocs _searchPhraseQuery(IndexSearcher searcher, PhraseQuery query, int topN, float constantScore) throws IOException {
 
+    if (query.getSlop() != 0) {
+      throw new IllegalArgumentException("can only handle slop=0; got " + query.getSlop());
+    }
+
     List<AtomicReaderContext> leaves = searcher.getIndexReader().leaves();
     //System.out.println("_searchTermQuery: " + leaves.size() + " segments; query=" + query);
     //new Throwable().printStackTrace(System.out);
@@ -808,6 +812,7 @@ public class NativeSearch {
           }
         }
 
+        //System.out.println("  seg=" + state.reader.getSegmentName());
         totalHits += searchSegmentExactPhraseQuery(topDocIDs,
                                                    topScores,
                                                    state.maxDoc,
