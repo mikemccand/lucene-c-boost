@@ -1,16 +1,17 @@
 structural diffs
   - IntNRQ: stops collecting after first topN hits
   - sending MUST_NOT to BS
+  - ExactPhraseQuery stopping after phraseFreq=1 when hit cannot compete (but must be counted)
+
+why are fuzzy queries now worse!
+
+add a "requireExactTotalHits" boolean
+
+install this w/ jirasearch!
 
 cache more reflection fields/methods!
 
-must pass totalTF for all other places that use singleDocID
-
 don't pull DocsEnum?  can't i get at the docIn separately?
-
-add DOCS_ONLY TermQuery test
-
-silly: TermQuery does not need to tie break on docID in its collect
 
 why does TermRangeQuery not work?
 
@@ -22,17 +23,11 @@ need to cherrypick which MUST queries are "appropriate" for BS1...
 
 get omitNorms working
 
-why is stddev not lower for C impls?
-
 hmm TermsFilter?
 
 hmm BooleanFilter?
 
-remove register XXX
-
-why are fuzzy queries worse!
-
-add test: termquery DOCS_ONLY: it should work but won't for silly reason...
+fix testVarious to also swap in ConstantScoreQuery sometimes
 
 instead of docIDs[slot] we can do docUpto + slot!  saves a mem ref, but adds an add
 
@@ -42,7 +37,6 @@ hmm only the LAST must clause needs to fill in numFilled!  don't bother filling 
 PQ
   - why do we have both posUpto and posLeft?
   - must add the pos > lastPos check for same term at same position in a row!!
-  - reverse the score function and don't consider a doc that cannot possible have high enough phraseFreq to compete w/ bottom
   - how should we sort the terms?
   - constant score query wrapped around it?
   - check positinos inside orLastMustChunk instead
@@ -54,8 +48,6 @@ Filter via acceptDocs
 fix TermQuery !!  just do for loop over block size --> slower (strangely)
 
 cutover to generic getField
-
-add a "requireExactTotalHits" boolean
 
 CSQ(TermQuery) can be massively optimized in the no deletes case!
 

@@ -2341,6 +2341,7 @@ static void readVIntDocFreqBlock(PostingsState *sub) {
   if (sub->docsOnly) {
     for(int i=0;i<sub->docsLeft;i++) {
       sub->docDeltas[i] = readVInt(&sub->docFreqs);
+      //printf("    docDeltas[%d] = %d\n", i, sub->docDeltas[i]);
     }
   } else if (sub->freqs != 0) {
     for(int i=0;i<sub->docsLeft;i++) {
@@ -2358,6 +2359,7 @@ static void readVIntDocFreqBlock(PostingsState *sub) {
     for(int i=0;i<sub->docsLeft;i++) {
       unsigned int code = readVInt(&sub->docFreqs);
       sub->docDeltas[i] = code >> 1;
+      //printf("    docDeltas[%d] = %d\n", i, sub->docDeltas[i]);
       if ((code & 1) == 0) {
         readVInt(&sub->docFreqs);
       }

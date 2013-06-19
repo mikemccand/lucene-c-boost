@@ -24,22 +24,22 @@
 
 static void
 orFirstMustChunk(PostingsState *sub,
-                 register int endDoc,
-                 register int *docIDs,
-                 register unsigned int *coords) {
+                 int endDoc,
+                 int *docIDs,
+                 unsigned int *coords) {
 #ifdef DEBUG
   printf("first must\n");
 #endif
-  register int nextDocID = sub->nextDocID;
-  register unsigned int *docDeltas = sub->docDeltas;
-  register unsigned int *freqs = sub->freqs;
+  int nextDocID = sub->nextDocID;
+  unsigned int *docDeltas = sub->docDeltas;
+  unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->docFreqBlockLastRead;
-  register int blockEnd = sub->docFreqBlockEnd;
+  int blockLastRead = sub->docFreqBlockLastRead;
+  int blockEnd = sub->docFreqBlockEnd;
 
-  register long tfSum = sub->tfSum;
-  register unsigned long *tfSums = sub->tfSums;
-  register unsigned int *tfs = sub->tfs;
+  long tfSum = sub->tfSum;
+  unsigned long *tfSums = sub->tfSums;
+  unsigned int *tfs = sub->tfs;
 
   // First scorer is different because we know slot is
   // "new" for every hit:
@@ -76,21 +76,21 @@ orFirstMustChunk(PostingsState *sub,
 
 static void
 orFirstMustChunkWithDeletes(PostingsState *sub,
-                            register int endDoc,
-                            register int *docIDs,
-                            register unsigned int *coords,
-                            register unsigned char *liveDocsBytes) {
+                            int endDoc,
+                            int *docIDs,
+                            unsigned int *coords,
+                            unsigned char *liveDocsBytes) {
 
-  register int nextDocID = sub->nextDocID;
-  register unsigned int *docDeltas = sub->docDeltas;
-  register unsigned int *freqs = sub->freqs;
+  int nextDocID = sub->nextDocID;
+  unsigned int *docDeltas = sub->docDeltas;
+  unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->docFreqBlockLastRead;
-  register int blockEnd = sub->docFreqBlockEnd;
+  int blockLastRead = sub->docFreqBlockLastRead;
+  int blockEnd = sub->docFreqBlockEnd;
 
-  register long tfSum = sub->tfSum;
-  register unsigned long *tfSums = sub->tfSums;
-  register unsigned int *tfs = sub->tfs;
+  long tfSum = sub->tfSum;
+  unsigned long *tfSums = sub->tfSums;
+  unsigned int *tfs = sub->tfs;
 
   // First scorer is different because we know slot is
   // "new" for every hit:
@@ -126,23 +126,23 @@ orFirstMustChunkWithDeletes(PostingsState *sub,
 
 static void
 orMustChunk(PostingsState *sub,
-            register int endDoc,
-            register int *docIDs,
-            register unsigned int *coords,
-            register int prevMustClauseCount) {
+            int endDoc,
+            int *docIDs,
+            unsigned int *coords,
+            int prevMustClauseCount) {
 
 #ifdef DEBUG
   printf("middle must\n");
 #endif
-  register int nextDocID = sub->nextDocID;
-  register unsigned int *docDeltas = sub->docDeltas;
-  register unsigned int *freqs = sub->freqs;
+  int nextDocID = sub->nextDocID;
+  unsigned int *docDeltas = sub->docDeltas;
+  unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->docFreqBlockLastRead;
-  register int blockEnd = sub->docFreqBlockEnd;
-  register long tfSum = sub->tfSum;
-  register unsigned long *tfSums = sub->tfSums;
-  register unsigned int *tfs = sub->tfs;
+  int blockLastRead = sub->docFreqBlockLastRead;
+  int blockEnd = sub->docFreqBlockEnd;
+  long tfSum = sub->tfSum;
+  unsigned long *tfSums = sub->tfSums;
+  unsigned int *tfs = sub->tfs;
 
   while (nextDocID < endDoc) {
     //printf("  docID=%d\n", nextDocID);
@@ -177,22 +177,22 @@ orMustChunk(PostingsState *sub,
 
 static int
 orLastMustChunk(PostingsState *sub,
-                register int endDoc,
-                register unsigned int *filled,
-                register int *docIDs,
-                register unsigned int *coords,
-                register int prevMustClauseCount) {
+                int endDoc,
+                unsigned int *filled,
+                int *docIDs,
+                unsigned int *coords,
+                int prevMustClauseCount) {
 
-  register int nextDocID = sub->nextDocID;
-  register unsigned int *docDeltas = sub->docDeltas;
-  register unsigned int *freqs = sub->freqs;
+  int nextDocID = sub->nextDocID;
+  unsigned int *docDeltas = sub->docDeltas;
+  unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->docFreqBlockLastRead;
-  register int blockEnd = sub->docFreqBlockEnd;
-  register long tfSum = sub->tfSum;
-  register unsigned long *tfSums = sub->tfSums;
-  register unsigned int *tfs = sub->tfs;
-  register int numFilled = 0;
+  int blockLastRead = sub->docFreqBlockLastRead;
+  int blockEnd = sub->docFreqBlockEnd;
+  long tfSum = sub->tfSum;
+  unsigned long *tfSums = sub->tfSums;
+  unsigned int *tfs = sub->tfs;
+  int numFilled = 0;
 
 #ifdef DEBUG
   printf("last must\n");
@@ -242,18 +242,18 @@ int phraseQuery(PostingsState* subs,
                 unsigned char *liveDocsBytes,
                 double *termScoreCache,
                 float termWeight,
-                register int maxDoc,
-                register int topN,
-                register int numScorers,
-                register int docBase,
-                register unsigned int *filled,
-                register int *docIDs,
-                register unsigned int *coords,
-                register float *topScores,
-                register int *topDocIDs,
-                register float *normTable,
-                register unsigned char *norms,
-                register int *posOffsets) {
+                int maxDoc,
+                int topN,
+                int numScorers,
+                int docBase,
+                unsigned int *filled,
+                int *docIDs,
+                unsigned int *coords,
+                float *topScores,
+                int *topDocIDs,
+                float *normTable,
+                unsigned char *norms,
+                int *posOffsets) {
 
   bool failed = false;
   unsigned int *posCounts = 0;
@@ -286,7 +286,7 @@ int phraseQuery(PostingsState* subs,
 #ifdef DEBUG
     printf("cycle docUpto=%d\n", docUpto);
 #endif
-    register int endDoc = docUpto + CHUNK;
+    int endDoc = docUpto + CHUNK;
     if (liveDocsBytes != 0) {
       orFirstMustChunkWithDeletes(&subs[0], endDoc, docIDs, coords, liveDocsBytes);
     } else {

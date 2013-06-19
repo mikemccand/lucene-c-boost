@@ -24,10 +24,12 @@ import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.codecs.Codec;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.document.FieldType;
 import org.apache.lucene.document.IntField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -456,6 +458,7 @@ public class TestNativeSearch extends LuceneTestCase {
       assertTrue(r2 != null);
 
       IndexSearcher s1 = new IndexSearcher(r1);
+      //System.out.println("seacher=" + s1 + " maxDoc=" + s1.getIndexReader().maxDoc());
       IndexSearcher s2 = new IndexSearcher(r2);
 
       for(int i=0;i<10000;i++) {
@@ -465,10 +468,12 @@ public class TestNativeSearch extends LuceneTestCase {
 
         for(int d=0;d<2;d++) {
           IndexSearcher s = d == 0 ? s1 : s2;
+          //System.out.println("TEST: d=" + d);
 
           assertSameHits(s, new TermQuery(new Term("field", "a")));
 
           for(int j=1;j<6;j++) {
+            //System.out.println("TEST: j=" + j);
             String other = String.valueOf((char) (97+j));
             BooleanQuery bq = new BooleanQuery();
             bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
@@ -487,7 +492,6 @@ public class TestNativeSearch extends LuceneTestCase {
             bq.add(new TermQuery(new Term("field", other)), BooleanClause.Occur.SHOULD);
             assertSameHits(s, bq);
             assertSameHits(s, new ConstantScoreQuery(bq));
-
             bq = new BooleanQuery();
             bq.add(new TermQuery(new Term("field", "a")), BooleanClause.Occur.SHOULD);
             bq.add(new TermQuery(new Term("field", other)), BooleanClause.Occur.MUST_NOT);
@@ -852,6 +856,9 @@ public class TestNativeSearch extends LuceneTestCase {
     IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
     iwc.setCodec(Codec.forName("Lucene42"));
     IndexWriter w = new IndexWriter(dir, iwc);
+    FieldType docsOnlyType = new FieldType(TextField.TYPE_NOT_STORED);
+    docsOnlyType.setIndexOptions(FieldInfo.IndexOptions.DOCS_ONLY);
+    docsOnlyType.freeze();
     for(int docUpto=0;docUpto<100;docUpto++) {
       //System.out.println("\nTEST: doc=" + docUpto);
       StringBuilder sb = new StringBuilder();
@@ -893,6 +900,7 @@ public class TestNativeSearch extends LuceneTestCase {
       String sf = sb.toString();
       //System.out.println("field=" + sf);
       doc.add(new TextField("field", sf, Field.Store.NO));
+      doc.add(new Field("fieldDocsOnly", sf, docsOnlyType));
       w.addDocument(doc);
     }
 
@@ -904,6 +912,16 @@ public class TestNativeSearch extends LuceneTestCase {
     q.add(new Term("field", "the"));
     q.add(new Term("field", "doc"));
     assertSameHits(s, q);
+
+    assertSameHits(s, new TermQuery(new Term("field", "foo")));
+    assertSameHits(s, new TermQuery(new Term("fieldDocsOnly", "foo")));
+    assertSameHits(s, new TermQuery(new Term("field", "bar")));
+    assertSameHits(s, new TermQuery(new Term("fieldDocsOnly", "bar")));
+    assertSameHits(s, new TermQuery(new Term("field", "the")));
+    assertSameHits(s, new TermQuery(new Term("fieldDocsOnly", "the")));
+    assertSameHits(s, new TermQuery(new Term("field", "doc")));
+    assertSameHits(s, new TermQuery(new Term("fieldDocsOnly", "doc")));
+
     r.close();
     dir.close();
   }

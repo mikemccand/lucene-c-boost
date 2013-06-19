@@ -14,28 +14,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #include <math.h>
+#include <stdio.h>
 
 #include "common.h"
 
 static int
 orFirstChunk(PostingsState *sub,
-             register double *tsCache,
-             register float termWeight,
-             register int endDoc,
-             register unsigned int *filled,
-             register int *docIDs,
-             register float *scores,
-             register unsigned int *coords) {
+             double *tsCache,
+             float termWeight,
+             int endDoc,
+             unsigned int *filled,
+             int *docIDs,
+             float *scores,
+             unsigned int *coords) {
 
-  register int nextDocID = sub->nextDocID;
-  register unsigned int *docDeltas = sub->docDeltas;
-  register unsigned int *freqs = sub->freqs;
+  int nextDocID = sub->nextDocID;
+  unsigned int *docDeltas = sub->docDeltas;
+  unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->docFreqBlockLastRead;
-  register int blockEnd = sub->docFreqBlockEnd;
+  int blockLastRead = sub->docFreqBlockLastRead;
+  int blockEnd = sub->docFreqBlockEnd;
 
-  register int numFilled = 0;
+  int numFilled = 0;
 
   // First scorer is different because we know slot is
   // "new" for every hit:
@@ -61,11 +63,11 @@ orFirstChunk(PostingsState *sub,
     }
   } else {
 
-    //printf("scorers[0]\n");fflush(stdout);
+    //printf("scorers[0] nextDoc=%d endDoc=%d\n", nextDocID, endDoc);fflush(stdout);
     while (nextDocID < endDoc) {
-      //printf("  docID=%d\n", nextDocID);
       int slot = nextDocID & MASK;
       int freq = freqs[blockLastRead];
+      //printf("  docID=%d freq=%d\n", nextDocID, freq);fflush(stdout);
       docIDs[slot] = nextDocID;
       if (freq < TERM_SCORES_CACHE_SIZE) {
         scores[slot] = tsCache[freq];
@@ -98,23 +100,23 @@ orFirstChunk(PostingsState *sub,
 
 static int
 orFirstChunkDeletes(PostingsState *sub,
-                    register double *tsCache,
-                    register float termWeight,
-                    register int endDoc,
-                    register unsigned int *filled,
-                    register int *docIDs,
-                    register float *scores,
-                    register unsigned int *coords,
-                    register unsigned char *liveDocBytes) {
+                    double *tsCache,
+                    float termWeight,
+                    int endDoc,
+                    unsigned int *filled,
+                    int *docIDs,
+                    float *scores,
+                    unsigned int *coords,
+                    unsigned char *liveDocBytes) {
 
-  register int nextDocID = sub->nextDocID;
-  register unsigned int *docDeltas = sub->docDeltas;
-  register unsigned int *freqs = sub->freqs;
+  int nextDocID = sub->nextDocID;
+  unsigned int *docDeltas = sub->docDeltas;
+  unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->docFreqBlockLastRead;
-  register int blockEnd = sub->docFreqBlockEnd;
+  int blockLastRead = sub->docFreqBlockLastRead;
+  int blockEnd = sub->docFreqBlockEnd;
 
-  register int numFilled = 0;
+  int numFilled = 0;
 
   // First scorer is different because we know slot is
   // "new" for every hit:
@@ -183,21 +185,21 @@ orFirstChunkDeletes(PostingsState *sub,
 
 static int
 orChunk(PostingsState *sub,
-        register double *tsCache,
-        register float termWeight,
-        register int endDoc,
-        register unsigned int *filled,
+        double *tsCache,
+        float termWeight,
+        int endDoc,
+        unsigned int *filled,
         int numFilled,
-        register int *docIDs,
-        register float *scores,
-        register unsigned int *coords) {
+        int *docIDs,
+        float *scores,
+        unsigned int *coords) {
 
-  register int nextDocID = sub->nextDocID;
-  register unsigned int *docDeltas = sub->docDeltas;
-  register unsigned int *freqs = sub->freqs;
+  int nextDocID = sub->nextDocID;
+  unsigned int *docDeltas = sub->docDeltas;
+  unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->docFreqBlockLastRead;
-  register int blockEnd = sub->docFreqBlockEnd;
+  int blockLastRead = sub->docFreqBlockLastRead;
+  int blockEnd = sub->docFreqBlockEnd;
 
   if (scores == 0) {
     while (nextDocID < endDoc) {
@@ -269,22 +271,22 @@ orChunk(PostingsState *sub,
 
 static int
 orChunkDeletes(PostingsState *sub,
-               register double *tsCache,
-               register float termWeight,
-               register int endDoc,
-               register unsigned int *filled,
+               double *tsCache,
+               float termWeight,
+               int endDoc,
+               unsigned int *filled,
                int numFilled,
-               register int *docIDs,
-               register float *scores,
-               register unsigned int *coords,
-               register unsigned char *liveDocBytes) {
+               int *docIDs,
+               float *scores,
+               unsigned int *coords,
+               unsigned char *liveDocBytes) {
 
-  register int nextDocID = sub->nextDocID;
-  register unsigned int *docDeltas = sub->docDeltas;
-  register unsigned int *freqs = sub->freqs;
+  int nextDocID = sub->nextDocID;
+  unsigned int *docDeltas = sub->docDeltas;
+  unsigned int *freqs = sub->freqs;
 
-  register int blockLastRead = sub->docFreqBlockLastRead;
-  register int blockEnd = sub->docFreqBlockEnd;
+  int blockLastRead = sub->docFreqBlockLastRead;
+  int blockEnd = sub->docFreqBlockEnd;
 
   if (scores == 0) {
     //printf("term=%d nextDoc=%d\n", i, sub->nextDocID);
@@ -363,24 +365,24 @@ int booleanQueryOnlyShould(PostingsState* subs,
                            unsigned char *liveDocsBytes,
                            double **termScoreCache,
                            float *termWeights,
-                           register int maxDoc,
-                           register int topN,
-                           register int numScorers,
-                           register int docBase,
-                           register unsigned int *filled,
-                           register int *docIDs,
-                           register float *scores,
-                           register unsigned int *coords,
-                           register float *topScores,
-                           register int *topDocIDs,
-                           register float *coordFactors,
-                           register float *normTable,
-                           register unsigned char *norms) {
+                           int maxDoc,
+                           int topN,
+                           int numScorers,
+                           int docBase,
+                           unsigned int *filled,
+                           int *docIDs,
+                           float *scores,
+                           unsigned int *coords,
+                           float *topScores,
+                           int *topDocIDs,
+                           float *coordFactors,
+                           float *normTable,
+                           unsigned char *norms) {
 
   int docUpto = 0;
   int hitCount = 0;
   while (docUpto < maxDoc) {
-    register int endDoc = docUpto + CHUNK;
+    int endDoc = docUpto + CHUNK;
     //printf("cycle endDoc=%d dels=%lx\n", endDoc, liveDocBytes);fflush(stdout);
 
     int numFilled = 0;

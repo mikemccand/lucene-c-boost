@@ -125,7 +125,7 @@ if True:
   command += ' -DtempDir=build/test'
   command += ' -Dtests.codec=Lucene42'
   command += ' -Dtests.directory=NativeMMapDirectory'
-  #command += ' -Dtests.seed=D6173D6E70BD2417'
+  #command += ' -Dtests.seed=FBEEB4FE05D4E2E6'
   if len(sys.argv) != 1:
     command += ' -Dtests.method=%s' % sys.argv[1]
   command += ' org.junit.runner.JUnitCore'

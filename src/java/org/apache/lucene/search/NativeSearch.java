@@ -647,9 +647,6 @@ public class NativeSearch {
       AtomicReaderContext ctx = leaves.get(readerIDX);
       SegmentState state = new SegmentState(ctx, field);
       //System.out.println("  seg=" + readerIDX + " base=" + ctx.docBase);
-      if (state.docsOnly) {
-        throw new IllegalArgumentException("cannot handle DOCS_ONLY field");
-      }
       if (state.normBytes == null) {
         throw new IllegalArgumentException("cannot handle omitNorms field");
       }
@@ -796,13 +793,13 @@ public class NativeSearch {
 
           if (posAddress == 0) {
             IndexInput posIn = (IndexInput) getField(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "posIn");
-            posAddress = getMMapAddress(posIn);
+            posAddress = getMMapAddress(unwrap(posIn));
           }
           if (docFreqs[i] > 1) {
             singletonDocIDs[i] = -1;
             if (docFreqAddress == 0) {
               IndexInput docIn = (IndexInput) getField(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "startDocIn");
-              docFreqAddress = getMMapAddress(docIn);
+              docFreqAddress = getMMapAddress(unwrap(docIn));
             }
           } else {
             // Pulsed
@@ -860,9 +857,13 @@ public class NativeSearch {
     String field = null;
     String[] terms = new String[clauses.length];
     final BooleanClause.Occur[] occurs = new BooleanClause.Occur[clauses.length];
+    int numMustNotTop = 0;
     for(int i=0;i<clauses.length;i++) {
       BooleanClause clause = clauses[i];
       occurs[i] = clause.getOccur();
+      if (occurs[i] == BooleanClause.Occur.MUST_NOT) {
+        numMustNotTop++;
+      }
       
       if (!(clause.getQuery() instanceof TermQuery)) {
         throw new IllegalArgumentException("sub-queries must be TermQuery; got: " + clause.getQuery());
@@ -875,6 +876,20 @@ public class NativeSearch {
         throw new IllegalArgumentException("all sub-queries must be TermQuery against the same field; got both field=" + field + " and field=" + term.field());
       }
       terms[i] = term.text();
+    }
+
+    int maxCoord = clauses.length-numMustNotTop;
+    float[] coordFactors = new float[maxCoord+1];
+    for(int i=0;i<coordFactors.length;i++) {
+      float f;
+      if (coordDisabled) {
+        f = 1.0f;
+      } else if (maxCoord == 1) {
+        f = 1.0f;
+      } else {
+        f = sim.coord(i, maxCoord);
+      }
+      coordFactors[i] = f;
     }
 
     Weight w = searcher.createNormalizedWeight(query);
@@ -933,20 +948,6 @@ public class NativeSearch {
       }
 
       if (!scorers.isEmpty()) {
-
-        float[] coordFactors = new float[terms.length-numMustNot+1];
-        for(int i=0;i<coordFactors.length;i++) {
-          float f;
-          if (coordDisabled) {
-            f = 1.0f;
-          } else if (terms.length-numMustNot == 1) {
-            f = 1.0f;
-          } else {
-            f = sim.coord(i, terms.length-numMustNot);
-          }
-          coordFactors[i] = f;
-        }
-
         final float[] termWeights = new float[scorers.size()];
         final int[] singletonDocIDs = new int[scorers.size()];
         final long[] totalTermFreqs = new long[scorers.size()];
@@ -1091,6 +1092,7 @@ public class NativeSearch {
         }
         */
         
+        //System.out.println("  seg=" + state.reader.getSegmentName() + " docFreqs=" + Arrays.toString(docFreqs) + " numMustNot=" + numMustNot + " numMust=" + numMust + " docBase=" + ctx.docBase + " coord=" + Arrays.toString(coordFactors));
         totalHits += searchSegmentBooleanQuery(topDocIDs,
                                                topScores,
                                                state.maxDoc,

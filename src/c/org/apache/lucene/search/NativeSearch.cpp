@@ -252,6 +252,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
       sub->freqs[0] = (int) totalTermFreqs[i];
     } else {
       sub->docsLeft = docFreqs[i];
+      //printf("  not singleton; docsLeft=%d\n", sub->docsLeft);
       if (scores != 0 && i >= numMustNot) {
         sub->docDeltas = (unsigned int *) malloc(2*BLOCK_SIZE*sizeof(int));
         if (sub->docDeltas == 0) {
@@ -269,12 +270,11 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
 
         sub->freqs = 0;
       }
-      //printf("docFileAddress=%ld startFP=%ld\n", docFileAddress, docTermStartFPs[i]);fflush(stdout);
+      //printf("docFileAddress=%ld startFP=%ld scores=%lx\n", docFileAddress, docTermStartFPs[i], scores);fflush(stdout);
       sub->docFreqs = ((unsigned char *) docFileAddress) + docTermStartFPs[i];
-      //printf("  not singleton\n");
       nextDocFreqBlock(sub);
       sub->nextDocID = sub->docDeltas[0];
-      //printf("docDeltas[0]=%d\n", sub->docDeltas[0]);
+      //printf("docDeltas[0]=%d freqs[0]=%d\n", sub->docDeltas[0]);
       sub->docFreqBlockLastRead = 0;
     }
     //printf("init i=%d nextDocID=%d freq=%d blockEnd=%d singleton=%d\n", i, sub->nextDocID, sub->nextFreq, sub->blockEnd, singletonDocIDs[i]);fflush(stdout);
@@ -481,9 +481,9 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
   float *normTable = 0;
   int *topDocIDs = 0;
   float *topScores = 0;
-  register double *termScoreCache = 0;
+  double *termScoreCache = 0;
   PostingsState *sub = 0;
-  register int totalHits = 0;
+  int totalHits = 0;
   bool failed = false;
 
   unsigned char isCopy = 0;
@@ -585,20 +585,20 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
     sub->p = ((unsigned char *) docFileAddress) + docTermStartFP;
     int hitCount = 0;
 
-    register int nextDocID = 0;
-    register unsigned int *docDeltas = sub->docDeltas;
-    register unsigned int *freqs = sub->freqs;
+    int nextDocID = 0;
+    unsigned int *docDeltas = sub->docDeltas;
+    unsigned int *freqs = sub->freqs;
 
-    register int blockLastRead = sub->blockLastRead;
-    register int blockEnd = sub->blockEnd;
+    int blockLastRead = sub->blockLastRead;
+    int blockEnd = sub->blockEnd;
   
     if (liveDocBytes != 0) {
       //printf("TQ: has liveDocs\n");fflush(stdout);
       if (topScores == 0) {
         while (sub->docsLeft != 0) {
           nextBlock(sub);
-          register int limit = sub->blockEnd+1;
-          for(register int i=0;i<limit;i++) {
+          int limit = sub->blockEnd+1;
+          for(int i=0;i<limit;i++) {
             nextDocID += docDeltas[i];
             if (isSet(liveDocBytes, nextDocID)) {
               totalHits++;
@@ -614,9 +614,9 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
       } else {
         while (sub->docsLeft != 0) {
           nextBlock(sub);
-          register int limit = sub->blockEnd+1;
+          int limit = sub->blockEnd+1;
           //printf("limit=%d\n", limit);
-          for(register int i=0;i<limit;i++) {
+          for(int i=0;i<limit;i++) {
             nextDocID += docDeltas[i];
             if (isSet(liveDocBytes, nextDocID)) {
               totalHits++;
@@ -653,8 +653,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
         //printf("TQ: has topScores\n");fflush(stdout);
         while (sub->docsLeft != 0) {
           nextBlock(sub);
-          register int limit = sub->blockEnd+1;
-          for(register int i=0;i<limit;i++) {
+          int limit = sub->blockEnd+1;
+          for(int i=0;i<limit;i++) {
             nextDocID += docDeltas[i];
 
             int docID = docBase + nextDocID;
@@ -671,8 +671,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
       } else {
         while (sub->docsLeft != 0) {
           nextBlock(sub);
-          register int limit = sub->blockEnd+1;
-          for(register int i=0;i<limit;i++) {
+          int limit = sub->blockEnd+1;
+          for(int i=0;i<limit;i++) {
             nextDocID += docDeltas[i];
 
             float score;
@@ -717,7 +717,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
     sub->docsOnly = (bool) docsOnly;
     sub->docsLeft = docFreq;
     // Locality seemed to help here:
-    if (jtopScores != 0) {
+    if (jtopScores != 0 && !docsOnly) {
       sub->docDeltas = (unsigned int *) malloc(2*BLOCK_SIZE*sizeof(int));
       if (sub->docDeltas == 0) {
         failed = true;
@@ -740,12 +740,12 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
     //printf("docDeltas[0]=%d\n", sub->docDeltas[0]);
     sub->docFreqBlockLastRead = 0;
 
-    register int nextDocID = sub->nextDocID;
-    register unsigned int *docDeltas = sub->docDeltas;
-    register unsigned int *freqs = sub->freqs;
+    int nextDocID = sub->nextDocID;
+    unsigned int *docDeltas = sub->docDeltas;
+    unsigned int *freqs = sub->freqs;
 
-    register int blockLastRead = sub->docFreqBlockLastRead;
-    register int blockEnd = sub->docFreqBlockEnd;
+    int blockLastRead = sub->docFreqBlockLastRead;
+    int blockEnd = sub->docFreqBlockEnd;
   
     if (liveDocBytes != 0) {
       if (topScores == 0) {
@@ -760,6 +760,42 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
               // Hit is competitive   
               topDocIDs[1] = docID;
               downHeapNoScores(topN, topDocIDs);
+            }
+          }
+
+          // Inlined nextDoc:
+          if (blockLastRead == blockEnd) {
+            if (sub->docsLeft == 0) {
+              break;
+            } else {
+              nextDocFreqBlock(sub);
+              blockLastRead = -1;
+              blockEnd = sub->docFreqBlockEnd;
+            }
+          }
+
+          nextDocID += docDeltas[++blockLastRead];
+        }
+      } else if (docsOnly) {
+        
+        float baseScore = termScoreCache[1];
+
+        while (true) {
+          if (isSet(liveDocBytes, nextDocID)) {
+            totalHits++;
+
+            float score = baseScore * normTable[norms[nextDocID]];
+
+            int docID = docBase + nextDocID;
+
+            if (score > topScores[1]) {
+              // Hit is competitive   
+              topDocIDs[1] = docID;
+              topScores[1] = score;
+
+              downHeap(topN, topDocIDs, topScores);
+
+              //printf("    **\n");fflush(stdout);
             }
           }
 
@@ -794,7 +830,6 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
 
             int docID = docBase + nextDocID;
 
-            //if (score > topScores[1] || (score == topScores[1] && docID < topDocIDs[1])) {
             if (score > topScores[1]) {
               // Hit is competitive   
               topDocIDs[1] = docID;
@@ -849,6 +884,38 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
 
           nextDocID += docDeltas[++blockLastRead];
         }
+      } else if (docsOnly) {
+
+        float baseScore = termScoreCache[1];
+
+        while (true) {
+
+          float score = baseScore * normTable[norms[nextDocID]];
+          int docID = docBase + nextDocID;
+
+          if (score > topScores[1]) {
+            // Hit is competitive   
+            topDocIDs[1] = docID;
+            topScores[1] = score;
+
+            downHeap(topN, topDocIDs, topScores);
+            //printf("    **\n");fflush(stdout);
+          }
+
+          // Inlined nextDoc:
+          if (blockLastRead == blockEnd) {
+            if (sub->docsLeft == 0) {
+              break;
+            } else {
+              nextDocFreqBlock(sub);
+              blockLastRead = -1;
+              blockEnd = sub->docFreqBlockEnd;
+            }
+          }
+
+          nextDocID += docDeltas[++blockLastRead];
+        }
+
       } else {
 
         while (true) {
@@ -866,7 +933,6 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentTermQuery
 
           int docID = docBase + nextDocID;
 
-          //if (score > topScores[1] || (score == topScores[1] && docID < topDocIDs[1])) {
           if (score > topScores[1]) {
             // Hit is competitive   
             topDocIDs[1] = docID;
@@ -962,7 +1028,7 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
   sub->docDeltas = (unsigned int *) malloc(BLOCK_SIZE * sizeof(int));
   sub->freqs = 0;
 
-  register unsigned int *docDeltas = sub->docDeltas;
+  unsigned int *docDeltas = sub->docDeltas;
 
   int numTerms = env->GetArrayLength(jtermStats);
   //printf("numTerms=%d\n", numTerms);
@@ -976,7 +1042,7 @@ Java_org_apache_lucene_search_NativeSearch_fillMultiTermFilter
     //printf("do term %d docFreq=%d\n", i, sub->docsLeft);fflush(stdout);
 
     while (true) {
-      register int limit = sub->docFreqBlockEnd+1;
+      int limit = sub->docFreqBlockEnd+1;
       //printf("  limit %d\n", limit);fflush(stdout);
       if (liveDocsBytes == 0) {
         for(int j=0;j<limit;j++) {
