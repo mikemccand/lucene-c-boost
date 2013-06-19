@@ -261,6 +261,7 @@ int phraseQuery(PostingsState* subs,
   int docUpto = 0;
   int hitCount = 0;
   int countUpto = 1;
+  float scoreToBeat = 0.0;
 
   posCounts = (unsigned int *) calloc(POS_CHUNK, sizeof(int));
   if (posCounts == 0) {
@@ -305,13 +306,15 @@ int phraseQuery(PostingsState* subs,
 #ifdef DEBUG
       printf("\ncheck positions slot=%d docID=%d\n", slot, docIDs[slot]);
 #endif
-      //printf("    docID=%d\n", docIDs[slot]);fflush(stdout);
+      //printf("    docID=%d\n",
+      //docIDs[slot]);fflush(stdout);
 
       // This doc has all of the terms, now check their
       // positions:
         
       // Seek/init pos so we are positioned at posDeltas
       // for this document:
+      unsigned int minTF = 4294967295;
       for(int j=0;j<numScorers;j++) {
         PostingsState *sub = subs+j;
 #ifdef DEBUG
@@ -328,10 +331,27 @@ int phraseQuery(PostingsState* subs,
 #ifdef DEBUG
         printf("    nextPos=%d\n", sub->nextPos);
 #endif
+        if (sub->tfs[slot] < minTF) {
+          minTF = sub->tfs[slot];
+        }
         sub->posLeftInDoc = sub->tfs[slot];
 #ifdef DEBUG
         printf("    posLeftInDoc=%d posUpto=%d\n", sub->posLeftInDoc, sub->posUpto);
 #endif
+      }
+
+      bool doStopAfterFirstPhrase;
+      if (topScores == 0) {
+        doStopAfterFirstPhrase = true;
+      } else {
+        // Invert the score of the bottom of the queue:
+        float f = (scoreToBeat / normTable[norms[docIDs[slot]]]) / termWeight;
+        unsigned int phraseFreqToBeat = (unsigned int) (f*f);
+        //printf("scoreToBeat=%g phraseFreqToBeat=%d\n", scoreToBeat, phraseFreqToBeat);
+        doStopAfterFirstPhrase = minTF < phraseFreqToBeat;
+        //if (doStopAfterFirstPhrase) {
+        //printf("do stop: %d vs %d\n", minTF, phraseFreqToBeat);
+        //}
       }
 
       bool done = false;
@@ -448,7 +468,7 @@ int phraseQuery(PostingsState* subs,
               printf("  match pos=%d slot=%d\n", pos, posSlot);fflush(stdout);
 #endif
               phraseFreq++;
-              if (topScores == 0) {
+              if (doStopAfterFirstPhrase) {
                 // ConstantScoreQuery(PhraseQuery), so we can
                 // stop & collect hit as soon as we find one
                 // phrase match
@@ -506,6 +526,10 @@ int phraseQuery(PostingsState* subs,
 
         hitCount++;
 
+        if (doStopAfterFirstPhrase) {
+          continue;
+        }
+
         int docID = docBase + docIDs[slot];
 
 #ifdef DEBUG
@@ -539,8 +563,10 @@ int phraseQuery(PostingsState* subs,
 
             downHeap(topN, topDocIDs, topScores);
 #ifdef DEBUG
-            printf("    **\n");fflush(stdout);
+              printf("    ** score=%g phraseFreq=%d norm=%g\n", score, phraseFreq, normTable[norms[docIDs[slot]]]);fflush(stdout);
 #endif
+
+            scoreToBeat = topScores[1];
           }
         }
       }
