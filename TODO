@@ -3,6 +3,8 @@ structural diffs
   - sending MUST_NOT to BS
   - ExactPhraseQuery stopping after phraseFreq=1 when hit cannot compete (but must be counted)
 
+can we be agnostic to 4.3 vs 4.4?
+
 why are fuzzy queries now worse!
 
 add a "requireExactTotalHits" boolean
@@ -15,8 +17,6 @@ don't pull DocsEnum?  can't i get at the docIn separately?
 
 why does TermRangeQuery not work?
 
-run all Lucene tests again
-
 convert live docs -> FixedBitSet?  so i can share code w/ filter ...
 
 need to cherrypick which MUST queries are "appropriate" for BS1...
@@ -27,8 +27,6 @@ hmm TermsFilter?
 
 hmm BooleanFilter?
 
-instead of docIDs[slot] we can do docUpto + slot!  saves a mem ref, but adds an add
-
 hmm only the LAST must clause needs to fill in numFilled!  don't bother filling for first N-1
   - and, we can collect during that last must
 
@@ -36,10 +34,7 @@ PQ
   - why do we have both posUpto and posLeft?
   - must add the pos > lastPos check for same term at same position in a row!!
   - how should we sort the terms?
-  - constant score query wrapped around it?
   - check positinos inside orLastMustChunk instead
-
-MUST: we can re-compute filled every time!  so that we don't iterate over too many on each iter
 
 Filter via acceptDocs
 

@@ -436,7 +436,7 @@ public class NativeSearch {
       }
 
       if (!termStats.isEmpty()) {
-        long[] bitSetBits = (long[]) getField(bitSet, "org.apache.lucene.util.FixedBitSet", "bits");
+        long[] bitSetBits = (long[]) getFieldObject(bitSet, "org.apache.lucene.util.FixedBitSet", "bits");
         long[] termStatsArray = new long[termStats.size()];
         for(int i=0;i<termStatsArray.length;i++) { 
           termStatsArray[i] = termStats.get(i);
@@ -486,35 +486,40 @@ public class NativeSearch {
   static final Class blockTreeIntersectEnum;
   static final Field blockTreeIntersectCurrentFrameField;
   static final Field intersectFrameStateField;
+  static final Field blockDocsEnumSingletonDocIDField;
+  static final Field blockDocsEnumTotalTermFreqField;
 
   static {
     try {
-      Class<?> x = Class.forName("org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$IntBlockTermState");
-      blockTermStateDocStartFPField = x.getDeclaredField("docStartFP");
-      blockTermStateDocStartFPField.setAccessible(true);
+      Class<?> x;
+      blockTermStateDocStartFPField = getField("org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$IntBlockTermState",
+                                               "docStartFP");
 
-      blockTermStateSingletonDocIDField = x.getDeclaredField("singletonDocID");
-      blockTermStateSingletonDocIDField.setAccessible(true);
+      blockTermStateSingletonDocIDField = getField("org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$IntBlockTermState",
+                                               "singletonDocID");
 
-      x = Class.forName("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$SegmentTermsEnum");
-      blockTreeCurrentFrameField = x.getDeclaredField("currentFrame");
-      blockTreeCurrentFrameField.setAccessible(true);
+      blockTreeCurrentFrameField = getField("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$SegmentTermsEnum",
+                                            "currentFrame");
 
-      x = Class.forName("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$SegmentTermsEnum$Frame");
-      decodeMetaDataMethod = x.getDeclaredMethod("decodeMetaData");
-      decodeMetaDataMethod.setAccessible(true);
-      frameStateField = x.getDeclaredField("state");
-      frameStateField.setAccessible(true);
+      decodeMetaDataMethod = getMethod("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$SegmentTermsEnum$Frame",
+                                       "decodeMetaData");
+      frameStateField = getField("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$SegmentTermsEnum$Frame",
+                                 "state");
 
       blockTreeIntersectEnum = Class.forName("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$IntersectEnum");
-      blockTreeIntersectCurrentFrameField = blockTreeIntersectEnum.getDeclaredField("currentFrame");
-      blockTreeIntersectCurrentFrameField.setAccessible(true);
+      blockTreeIntersectCurrentFrameField = getField("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$IntersectEnum",
+                                                     "currentFrame");
 
-      x = Class.forName("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$IntersectEnum$Frame");
-      intersectDecodeMetaDataMethod = x.getDeclaredMethod("decodeMetaData");
-      intersectDecodeMetaDataMethod.setAccessible(true);
-      intersectFrameStateField = x.getDeclaredField("termState");
-      intersectFrameStateField.setAccessible(true);
+      intersectDecodeMetaDataMethod = getMethod("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$IntersectEnum$Frame",
+                                                "decodeMetaData");
+      intersectFrameStateField = getField("org.apache.lucene.codecs.BlockTreeTermsReader$FieldReader$IntersectEnum$Frame",
+                                          "termState");
+
+      blockDocsEnumSingletonDocIDField = getField("org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum",
+                                                  "singletonDocID");
+
+      blockDocsEnumTotalTermFreqField = getField("org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum",
+                                                 "totalTermFreq");
     } catch (Exception e) {
       throw new IllegalStateException("reflection failed", e);
     }
@@ -558,7 +563,7 @@ public class NativeSearch {
     }
   }
 
-  private static Object getField(Object o, String className, String fieldName) {
+  private static Object getFieldObject(Object o, String className, String fieldName) {
     try {
       Class<?> x = Class.forName(className);
       Field f = x.getDeclaredField(fieldName);
@@ -566,6 +571,28 @@ public class NativeSearch {
       return f.get(o);
     } catch (Exception e) {
       throw new RuntimeException("failed to get field=" + fieldName + " from class=" + className + " object=" + o, e);
+    }
+  }
+
+  private static Field getField(String className, String fieldName) {
+    try {
+      Class<?> x = Class.forName(className);
+      Field f = x.getDeclaredField(fieldName);
+      f.setAccessible(true);
+      return f;
+    } catch (Exception e) {
+      throw new RuntimeException("failed to get field=" + fieldName + " from class=" + className, e);
+    }
+  }
+
+  private static Method getMethod(String className, String methodName) {
+    try {
+      Class<?> x = Class.forName(className);
+      Method f = x.getDeclaredMethod(methodName);
+      f.setAccessible(true);
+      return f;
+    } catch (Exception e) {
+      throw new RuntimeException("failed to get method=" + methodName + " from class=" + className, e);
     }
   }
 
@@ -723,7 +750,7 @@ public class NativeSearch {
       throw new IllegalArgumentException("searcher.getSimilarity() must be DefaultSimilarity; got: " + sim);
     }
 
-    String field = (String) getField(query, "org.apache.lucene.search.PhraseQuery", "field");
+    String field = (String) getFieldObject(query, "org.apache.lucene.search.PhraseQuery", "field");
 
     Weight w = searcher.createNormalizedWeight(query);
 
@@ -764,7 +791,7 @@ public class NativeSearch {
         //System.out.println("    got scorer");
         float termWeight = getExactPhraseScorerTermWeight(scorer);
 
-        Object[] chunkStates = (Object[]) getField(scorer, "org.apache.lucene.search.ExactPhraseScorer", "chunkStates");
+        Object[] chunkStates = (Object[]) getFieldObject(scorer, "org.apache.lucene.search.ExactPhraseScorer", "chunkStates");
 
         long[] docTermStartFPs = new long[chunkStates.length];
         long[] posTermStartFPs = new long[chunkStates.length];
@@ -776,9 +803,9 @@ public class NativeSearch {
         long posAddress = 0;
 
         for(int i=0;i<chunkStates.length;i++) {
-          DocsAndPositionsEnum posEnum = (DocsAndPositionsEnum) getField(chunkStates[i],
-                                                                         "org.apache.lucene.search.ExactPhraseScorer$ChunkState",
-                                                                         "posEnum");
+          DocsAndPositionsEnum posEnum = (DocsAndPositionsEnum) getFieldObject(chunkStates[i],
+                                                                               "org.apache.lucene.search.ExactPhraseScorer$ChunkState",
+                                                                               "posEnum");
           posOffsets[i] = getIntField(chunkStates[i],
                                       "org.apache.lucene.search.ExactPhraseScorer$ChunkState",
                                       "offset");
@@ -794,13 +821,13 @@ public class NativeSearch {
           posTermStartFPs[i] = getLongField(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "posTermStartFP");
 
           if (posAddress == 0) {
-            IndexInput posIn = (IndexInput) getField(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "posIn");
+            IndexInput posIn = (IndexInput) getFieldObject(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "posIn");
             posAddress = getMMapAddress(unwrap(posIn));
           }
           if (docFreqs[i] > 1) {
             singletonDocIDs[i] = -1;
             if (docFreqAddress == 0) {
-              IndexInput docIn = (IndexInput) getField(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "startDocIn");
+              IndexInput docIn = (IndexInput) getFieldObject(posEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsAndPositionsEnum", "startDocIn");
               docFreqAddress = getMMapAddress(unwrap(docIn));
             }
           } else {
@@ -1370,13 +1397,10 @@ public class NativeSearch {
       throw new IllegalStateException("reflection failed", e);
     }
   }
-
+  
   private static long getTotalTermFreq(DocsEnum docsEnum) {
     try {
-      Class<?> x = Class.forName("org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum");
-      Field f = x.getDeclaredField("totalTermFreq");
-      f.setAccessible(true);
-      return f.getLong(docsEnum);
+      return blockDocsEnumTotalTermFreqField.getLong(docsEnum);
     } catch (Exception e) {
       throw new IllegalStateException("reflection failed", e);
     }
@@ -1406,10 +1430,7 @@ public class NativeSearch {
 
   private static int getSingletonDocID(DocsEnum docsEnum) {
     try {
-      final Class<?> x = Class.forName("org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum");
-      final Field f = x.getDeclaredField("singletonDocID");
-      f.setAccessible(true);
-      return f.getInt(docsEnum);
+      return blockDocsEnumSingletonDocIDField.getInt(docsEnum);
     } catch (Exception e) {
       throw new IllegalStateException("reflection failed", e);
     }

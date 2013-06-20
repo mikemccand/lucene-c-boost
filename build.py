@@ -22,7 +22,7 @@ def newer(first, second):
   Returns True if first is newer than second.
   """
   if not os.path.exists(second):
-    return true
+    return True
   if type(first) is not list:
     first = [first]
   destModTime = os.path.getmtime(second)
