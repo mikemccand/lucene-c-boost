@@ -301,6 +301,9 @@ int phraseQuery(PostingsState* subs,
 #ifdef DEBUG
     printf("  numFilled=%d\n", numFilled);
 #endif
+
+    int docChunkBase = docBase + docUpto;
+
     for(int fill=0;fill<numFilled;fill++) {
       int slot = filled[fill];
 #ifdef DEBUG
@@ -532,7 +535,7 @@ int phraseQuery(PostingsState* subs,
           continue;
         }
 
-        int docID = docBase + docIDs[slot];
+        int docID = docChunkBase + slot;
 
 #ifdef DEBUG
         printf("  now collect\n");fflush(stdout);

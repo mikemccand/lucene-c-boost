@@ -294,13 +294,15 @@ int booleanQueryShouldMustNot(PostingsState* subs,
 
     hitCount += numFilled;
 
+    int docChunkBase = docBase + docUpto;
+
     if (topScores == 0) {
       for(int i=0;i<numFilled;i++) {
         int slot = filled[i];
         if (skips[slot]) {
           continue;
         }
-        int docID = docBase + docIDs[slot];
+        int docID = docChunkBase + slot;
         // TODO: we can stop collecting, and tracking filled,
         // after chunk once queue is full
         if (docID < topDocIDs[1]) {
@@ -320,7 +322,7 @@ int booleanQueryShouldMustNot(PostingsState* subs,
           continue;
         }
         float score = scores[slot] * coordFactors[coords[slot]] * normTable[norms[docIDs[slot]]];
-        int docID = docBase + docIDs[slot];
+        int docID = docChunkBase + slot;
         //printf("  docBase=%d doc=%d score=%.5f coord=%d cf=%.5f\n",
         //docBase, docID, score, coords[slot], coordFactors[coords[slot]]);
 

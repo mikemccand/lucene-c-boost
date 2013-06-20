@@ -27,8 +27,6 @@ hmm TermsFilter?
 
 hmm BooleanFilter?
 
-fix testVarious to also swap in ConstantScoreQuery sometimes
-
 instead of docIDs[slot] we can do docUpto + slot!  saves a mem ref, but adds an add
 
 hmm only the LAST must clause needs to fill in numFilled!  don't bother filling for first N-1

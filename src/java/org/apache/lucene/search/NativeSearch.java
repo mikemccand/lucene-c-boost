@@ -234,7 +234,9 @@ public class NativeSearch {
     //System.out.println("NATIVE: after rewrite: " + query);
 
     try {
-      return _search(searcher, query, topN);
+      TopDocs hits = _search(searcher, query, topN);
+      //System.out.println("NATIVE: " + hits.totalHits + " hits");
+      return hits;
     } catch (IllegalArgumentException iae) {
       //System.out.println("NATIVE: skip: " + iae);
       return searcher.search(query, null, topN);
