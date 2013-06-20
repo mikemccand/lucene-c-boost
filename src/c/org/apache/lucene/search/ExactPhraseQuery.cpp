@@ -341,14 +341,16 @@ int phraseQuery(PostingsState* subs,
       }
 
       bool doStopAfterFirstPhrase;
+      bool doSkipCollect;
       if (topScores == 0) {
         doStopAfterFirstPhrase = true;
+        doSkipCollect = false;
       } else {
         // Invert the score of the bottom of the queue:
         float f = (scoreToBeat / normTable[norms[docIDs[slot]]]) / termWeight;
         unsigned int phraseFreqToBeat = (unsigned int) (f*f);
         //printf("scoreToBeat=%g phraseFreqToBeat=%d\n", scoreToBeat, phraseFreqToBeat);
-        doStopAfterFirstPhrase = minTF < phraseFreqToBeat;
+        doStopAfterFirstPhrase = doSkipCollect = minTF < phraseFreqToBeat;
         //if (doStopAfterFirstPhrase) {
         //printf("do stop: %d vs %d\n", minTF, phraseFreqToBeat);
         //}
@@ -521,12 +523,12 @@ int phraseQuery(PostingsState* subs,
         //printf("      freq=%d\n", phraseFreq);fflush(stdout);
 
 #ifdef DEBUG
-        printf("  phraseFreq=%d\n", phraseFreq);fflush(stdout);
+        printf("  phraseFreq=%d topScores=%lx\n", phraseFreq, topScores);fflush(stdout);
 #endif
 
         hitCount++;
 
-        if (doStopAfterFirstPhrase) {
+        if (doSkipCollect) {
           continue;
         }
 
@@ -563,7 +565,7 @@ int phraseQuery(PostingsState* subs,
 
             downHeap(topN, topDocIDs, topScores);
 #ifdef DEBUG
-              printf("    ** score=%g phraseFreq=%d norm=%g\n", score, phraseFreq, normTable[norms[docIDs[slot]]]);fflush(stdout);
+            printf("    ** score=%g phraseFreq=%d norm=%g\n", score, phraseFreq, normTable[norms[docIDs[slot]]]);fflush(stdout);
 #endif
 
             scoreToBeat = topScores[1];

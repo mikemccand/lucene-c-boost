@@ -280,11 +280,12 @@ orShouldChunk(PostingsState *sub,
   sub->docFreqBlockLastRead = blockLastRead;
 }
 
-static void
+static int
 orMustChunk(PostingsState *sub,
             double *tsCache,
             float termWeight,
             int endDoc,
+            unsigned int *filled,
             int *docIDs,
             float *scores,
             unsigned int *coords,
@@ -297,6 +298,7 @@ orMustChunk(PostingsState *sub,
   int blockLastRead = sub->docFreqBlockLastRead;
   int blockEnd = sub->docFreqBlockEnd;
 
+  int numFilled = 0;
   if (scores == 0) {
     while (nextDocID < endDoc) {
       //printf("  docID=%d\n", nextDocID);
@@ -304,6 +306,7 @@ orMustChunk(PostingsState *sub,
 
       if (docIDs[slot] == nextDocID) {
         coords[slot]++;
+        filled[numFilled++] = slot;
       }
 
       // Inlined nextDoc:
@@ -335,6 +338,7 @@ orMustChunk(PostingsState *sub,
         }
         scores[slot] += score;
         coords[slot]++;
+        filled[numFilled++] = slot;
         //printf("    keep coord=%d\n", coords[slot]);
       }
 
@@ -355,6 +359,8 @@ orMustChunk(PostingsState *sub,
 
   sub->nextDocID = nextDocID;
   sub->docFreqBlockLastRead = blockLastRead;
+
+  return numFilled;
 }
 
 int booleanQueryShouldMustMustNot(PostingsState* subs,
@@ -398,7 +404,7 @@ int booleanQueryShouldMustMustNot(PostingsState* subs,
     }
     //printf("numFilled=%d\n", numFilled);
     for(int i=numMustNot+1;i<numMustNot + numMust;i++) {
-      orMustChunk(&subs[i], termScoreCache[i], termWeights[i], endDoc, docIDs, scores, coords, i-numMustNot);
+      numFilled = orMustChunk(&subs[i], termScoreCache[i], termWeights[i], endDoc, filled, docIDs, scores, coords, i-numMustNot);
     }
 
     if (topScores != 0) {

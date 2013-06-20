@@ -65,11 +65,25 @@ public class TestNativeSearch extends LuceneTestCase {
   }
 
   private void assertSameHits(IndexSearcher s, Query q) throws IOException {
+
+    Query csq;
+    if (q instanceof TermQuery || q instanceof BooleanQuery || q instanceof PhraseQuery) {
+      csq = new ConstantScoreQuery(q);
+    } else {
+      csq = null;
+    }
+
     // First with only top 10:
     //System.out.println("TEST: q=" + q + " topN=10");
     TopDocs expected = s.search(q, 10);
     TopDocs actual = NativeSearch.searchNative(s, q, 10);
     assertSameHits(expected, actual);
+
+    if (csq != null) {
+      expected = s.search(csq, 10);
+      actual = NativeSearch.searchNative(s, csq, 10);
+      assertSameHits(expected, actual);
+    }
     
     // First with only top 10:
     int maxDoc = s.getIndexReader().maxDoc();
@@ -77,6 +91,12 @@ public class TestNativeSearch extends LuceneTestCase {
     expected = s.search(q, maxDoc);
     actual = NativeSearch.searchNative(s, q, maxDoc);
     assertSameHits(expected, actual);
+
+    if (csq != null) {
+      expected = s.search(csq, maxDoc);
+      actual = NativeSearch.searchNative(s, csq, maxDoc);
+      assertSameHits(expected, actual);
+    }
   }
 
   public void testBasicBooleanQuery() throws Exception {
