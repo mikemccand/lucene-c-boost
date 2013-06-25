@@ -377,8 +377,15 @@ int booleanQueryOnlyShould(PostingsState* subs,
                            int *topDocIDs,
                            float *coordFactors,
                            float *normTable,
-                           unsigned char *norms) {
-
+                           unsigned char *norms,
+                           PostingsState *dsSubs,
+                           unsigned int *dsCounts,
+                           unsigned int *dsMissingDims,
+                           unsigned int dsNumDims,
+                           unsigned int *dsTermsPerDim,
+                           unsigned long *dsHitBits,
+                           unsigned long **dsNearMissBits)
+{
   int docUpto = 0;
   int hitCount = 0;
   while (docUpto < maxDoc) {
@@ -407,7 +414,24 @@ int booleanQueryOnlyShould(PostingsState* subs,
 
     int docChunkBase = docBase + docUpto;
 
-    if (topScores == 0) {
+    if (dsNumDims > 0) {
+      drillSidewaysCollect(topN,
+                           docBase,
+                           topDocIDs,
+                           topScores,
+                           filled,
+                           numFilled,
+                           docIDs,
+                           scores,
+                           dsCounts,
+                           dsMissingDims,
+                           docUpto,
+                           dsSubs,
+                           dsNumDims,
+                           dsTermsPerDim,
+                           dsHitBits,
+                           dsNearMissBits);
+    } else if (topScores == 0) {
       for(int i=0;i<numFilled;i++) {
         int slot = filled[i];
         int docID = docChunkBase + slot;

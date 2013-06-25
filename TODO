@@ -3,6 +3,8 @@ structural diffs
   - sending MUST_NOT to BS
   - ExactPhraseQuery stopping after phraseFreq=1 when hit cannot compete (but must be counted)
 
+handle BQ over DOCS_ONLY?
+
 can we be agnostic to 4.3 vs 4.4?
 
 add a "requireExactTotalHits" boolean

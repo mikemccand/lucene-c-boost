@@ -50,6 +50,55 @@ static int getLongBit(long *bits, int index) {
   return (bits[wordNum] & bitmask) != 0;
 }
 
+static bool initSub(int id,
+                    PostingsState *sub,
+                    bool docsOnly,
+                    int singletonDocID,
+                    long totalTermFreq,
+                    int docFreq,
+                    bool skipFreqs,
+                    long docFileAddress,
+                    long docTermStartFP
+                    ) {
+  sub->docsOnly = docsOnly;
+  sub->id = id;
+  if (singletonDocID != -1) {
+    sub->nextDocID = singletonDocID;
+    sub->docsLeft = 0;
+    sub->docFreqBlockLastRead = 0;
+    sub->docFreqBlockEnd = 0;
+    sub->docDeltas = 0;
+    sub->freqs = (unsigned int *) malloc(sizeof(int));
+    if (sub->freqs == 0) {
+      return false;
+    }
+    sub->freqs[0] = (int) totalTermFreq;
+  } else {
+    sub->docsLeft = docFreq;
+    if (!skipFreqs) {
+      sub->docDeltas = (unsigned int *) malloc(2*BLOCK_SIZE*sizeof(int));
+      if (sub->docDeltas == 0) {
+        return false;
+      }
+      // Locality seemed to help here:
+      sub->freqs = sub->docDeltas + BLOCK_SIZE;
+    } else {
+      sub->docDeltas = (unsigned int *) malloc(BLOCK_SIZE*sizeof(int));
+      if (sub->docDeltas == 0) {
+        return false;
+      }
+
+      sub->freqs = 0;
+    }
+    //printf("docFileAddress=%ld startFP=%ld scores=%lx\n", docFileAddress, docTermStartFPs[i], scores);fflush(stdout);
+    sub->docFreqs = ((unsigned char *) docFileAddress) + docTermStartFP;
+    nextDocFreqBlock(sub);
+    sub->nextDocID = sub->docDeltas[0];
+    sub->docFreqBlockLastRead = 0;
+  }
+
+  return true;
+}
 
 extern "C" JNIEXPORT jint JNICALL
 Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
@@ -102,7 +151,23 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
    jint numMustNot,
 
    // Next numMust clauses are MUST
-   jint numMust)
+   jint numMust,
+
+   jint dsNumDims,
+
+   jintArray jdsTermsPerDim,
+
+   jlongArray jdsHitBits,
+
+   jobjectArray jdsNearMissBits,
+
+   jintArray jdsSingletonDocIDs,
+
+   jintArray jdsDocFreqs,
+
+   jlongArray jdsDocTermStartFPs,
+
+   jlong dsDocFileAddress)
 {
 
   // Clauses come in sorted MUST_NOT (docFreq descending),
@@ -132,6 +197,75 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   unsigned char isCopy = 0;
   int numScorers;
   int topN;
+  PostingsState *dsSubs = 0;
+  unsigned int *dsCounts = 0;
+  unsigned int *dsMissingDims = 0;
+  unsigned int *dsTermsPerDim = 0;
+  unsigned long *dsHitBits = 0;
+  unsigned long **dsNearMissBits = 0;
+  unsigned long *dsDocTermStartFPs = 0;
+  int *dsSingletonDocIDs = 0;
+
+  if (dsNumDims > 0) {
+    dsCounts = (unsigned int *) malloc(CHUNK * sizeof(int));
+    if (dsCounts == 0) {
+      failed = true;
+      goto end;
+    }
+    dsMissingDims = (unsigned int *) malloc(CHUNK * sizeof(int));
+    if (dsMissingDims == 0) {
+      failed = true;
+      goto end;
+    }
+    dsTermsPerDim = (unsigned int *) env->GetIntArrayElements(jdsTermsPerDim, 0);
+    if (dsTermsPerDim == 0) {
+      failed = true;
+      goto end;
+    }
+    dsHitBits = (unsigned long *) env->GetPrimitiveArrayCritical(jdsHitBits, 0);
+    if (dsHitBits == 0) {
+      failed = true;
+      goto end;
+    }
+    dsNearMissBits = (unsigned long **) calloc(dsNumDims, sizeof(long *));
+    if (dsNearMissBits == 0) {
+      failed = true;
+      goto end;
+    }
+    for(int i=0;i<dsNumDims;i++) {
+      jlongArray jbits = (jlongArray) env->GetObjectArrayElement(jdsNearMissBits, i);
+      dsNearMissBits[i] = (unsigned long *) env->GetPrimitiveArrayCritical(jbits, 0);
+      if (dsNearMissBits[i] == 0) {
+        failed = true;
+        goto end;
+      }
+    }
+
+    dsSubs = (PostingsState *) calloc(numScorers, sizeof(PostingsState));
+    if (dsSubs == 0) {
+      failed = true;
+      goto end;
+    }
+
+    dsDocTermStartFPs = (unsigned long *) env->GetLongArrayElements(jdsDocTermStartFPs, 0);
+    if (dsDocTermStartFPs == 0) {
+      failed = true;
+      goto end;
+    }
+
+    dsSingletonDocIDs = (int *) env->GetIntArrayElements(jdsSingletonDocIDs, 0);
+    if (dsSingletonDocIDs == 0) {
+      failed = true;
+      goto end;
+    }
+
+    for(int i=0;i<dsNumDims;i++) {
+      if (!initSub(i, subs+i, true, dsSingletonDocIDs[i], 1, docFreqs[i], true, docFileAddress, dsDocTermStartFPs[i])) {
+        failed = true;
+        goto end;
+      }
+    }
+  }
 
   if (jtopScores == 0) {
     scores = 0;
@@ -232,52 +366,11 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   }
 
   for(int i=0;i<numScorers;i++) {
-    PostingsState *sub = &(subs[i]);
-    sub->docsOnly = false;
-    sub->id = i;
-    //printf("init scorers[%d] of %d\n", i, numScorers);
-
-    if (singletonDocIDs[i] != -1) {
-      //printf("  singleton: %d\n", singletonDocIDs[i]);
-      sub->nextDocID = singletonDocIDs[i];
-      sub->docsLeft = 0;
-      sub->docFreqBlockLastRead = 0;
-      sub->docFreqBlockEnd = 0;
-      sub->docDeltas = 0;
-      sub->freqs = (unsigned int *) malloc(sizeof(int));
-      if (sub->freqs == 0) {
-        failed = true;
-        goto end;
-      }
-      sub->freqs[0] = (int) totalTermFreqs[i];
-    } else {
-      sub->docsLeft = docFreqs[i];
-      //printf("  not singleton; docsLeft=%d\n", sub->docsLeft);
-      if (scores != 0 && i >= numMustNot) {
-        sub->docDeltas = (unsigned int *) malloc(2*BLOCK_SIZE*sizeof(int));
-        if (sub->docDeltas == 0) {
-          failed = true;
-          goto end;
-        }
-        // Locality seemed to help here:
-        sub->freqs = sub->docDeltas + BLOCK_SIZE;
-      } else {
-        sub->docDeltas = (unsigned int *) malloc(BLOCK_SIZE*sizeof(int));
-        if (sub->docDeltas == 0) {
-          failed = true;
-          goto end;
-        }
-
-        sub->freqs = 0;
-      }
-      //printf("docFileAddress=%ld startFP=%ld scores=%lx\n", docFileAddress, docTermStartFPs[i], scores);fflush(stdout);
-      sub->docFreqs = ((unsigned char *) docFileAddress) + docTermStartFPs[i];
-      nextDocFreqBlock(sub);
-      sub->nextDocID = sub->docDeltas[0];
-      //printf("docDeltas[0]=%d freqs[0]=%d\n", sub->docDeltas[0]);
-      sub->docFreqBlockLastRead = 0;
+    if (!initSub(i, subs+i, false, singletonDocIDs[i], totalTermFreqs[i], docFreqs[i],
+                 scores == 0 || i < numMustNot, docFileAddress, docTermStartFPs[i])) {
+      failed = true;
+      goto end;
     }
-    //printf("init i=%d nextDocID=%d freq=%d blockEnd=%d singleton=%d\n", i, sub->nextDocID, sub->nextFreq, sub->blockEnd, singletonDocIDs[i]);fflush(stdout);
   }
 
   // PQ holding top hits:
@@ -326,7 +419,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
     hitCount = booleanQueryOnlyShould(subs, liveDocsBytes, termScoreCache, termWeights,
                                       maxDoc, topN, numScorers, docBase, filled, docIDs, scores, coords,
                                       topScores, topDocIDs, coordFactors, normTable,
-                                      norms);
+                                      norms, dsSubs, dsCounts, dsMissingDims, dsNumDims, dsTermsPerDim, dsHitBits, dsNearMissBits);
   } else if (numMust == 0) {
     // At least one MUST_NOT and at least one SHOULD:
     hitCount = booleanQueryShouldMustNot(subs, liveDocsBytes, termScoreCache, termWeights,
@@ -382,6 +475,28 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   if (topScores != 0) {
     env->ReleaseFloatArrayElements(jtopScores, topScores, 0);
   }
+  if (dsCounts != 0) {
+    free(dsCounts);
+  }
+  if (dsMissingDims != 0) {
+    free(dsMissingDims);
+  }
+  if (dsTermsPerDim != 0) {
+    env->ReleaseIntArrayElements(jdsTermsPerDim, (int *) dsTermsPerDim, JNI_ABORT);
+  }
+  if (dsHitBits != 0) {
+    env->ReleasePrimitiveArrayCritical(jdsHitBits, dsHitBits, JNI_ABORT);
+  }
+  if (dsNearMissBits != 0) {
+    for(int i=0;i<dsNumDims;i++) {
+      if (dsNearMissBits[i] != 0) {
+        jlongArray jbits = (jlongArray) env->GetObjectArrayElement(jdsNearMissBits, i);
+        env->ReleasePrimitiveArrayCritical(jbits, dsNearMissBits[i], 0);
+      }
+    }
+    free(dsNearMissBits);
+  }
+
   if (termScoreCache != 0) {
     for(int i=0;i<numScorers;i++) {
       if (termScoreCache[i] != 0) {
@@ -407,7 +522,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   }
   if (subs != 0) {
     for(int i=0;i<numScorers;i++) {
-      PostingsState *sub = &(subs[i]);
+      PostingsState *sub = subs+i;
       if (sub->docDeltas != 0) {
         free(sub->docDeltas);
       } else if (sub->freqs != 0) {
@@ -416,6 +531,22 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
     }
 
     free(subs);
+  }
+  if (dsSubs != 0) {
+    for(int i=0;i<dsNumDims;i++) {
+      PostingsState *sub = dsSubs+i;
+      if (sub->docDeltas != 0) {
+        free(sub->docDeltas);
+      }
+    }
+
+    free(subs);
+  }
+  if (dsDocTermStartFPs != 0) {
+    env->ReleaseLongArrayElements(jdsDocTermStartFPs, (long *) dsDocTermStartFPs, JNI_ABORT);
+  }
+  if (dsSingletonDocIDs != 0) {
+    env->ReleaseIntArrayElements(jdsSingletonDocIDs, dsSingletonDocIDs, JNI_ABORT);
   }
 
   if (failed) {

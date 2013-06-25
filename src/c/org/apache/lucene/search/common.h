@@ -90,7 +90,14 @@ int booleanQueryOnlyShould(PostingsState* subs,
                            int *topDocIDs,
                            float *coordFactors,
                            float *normTable,
-                           unsigned char *norms);
+                           unsigned char *norms,
+                           PostingsState *dsSubs,
+                           unsigned int *dsCounts,
+                           unsigned int *dsMissingDims,
+                           unsigned int dsNumDims,
+                           unsigned int *dsTermsPerDim,
+                           unsigned long *dsHitBits,
+                           unsigned long **dsNearMissBits);
 
 int booleanQueryShouldMustNot(PostingsState* subs,
                               unsigned char *liveDocsBytes,
@@ -167,6 +174,23 @@ int phraseQuery(PostingsState* subs,
                 float *normTable,
                 unsigned char *norms,
                 int *posOffsets);
+
+void drillSidewaysCollect(unsigned int topN,
+                          unsigned int docBase,
+                          int *topDocIDs,
+                          float *topScores,
+                          unsigned int *filled,
+                          int numFilled,
+                          int *docIDs,
+                          float *scores,
+                          unsigned int *counts,
+                          unsigned int *missingDims,
+                          unsigned int docUpto,
+                          PostingsState *subs,
+                          int numDims,
+                          unsigned int *termsPerDim,
+                          unsigned long *hitBits,
+                          unsigned long **nearMissBits);
 
 bool isSet(unsigned char *bits, unsigned int docID);
 void setLongBit(unsigned long *bits, unsigned int docID);

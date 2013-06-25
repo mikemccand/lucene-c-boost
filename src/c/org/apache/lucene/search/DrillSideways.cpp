@@ -20,11 +20,12 @@
 // Collects one CHUNK of docs into facet bitsets; ported
 // from DrillSidewaysScorer.doUnionScoring:
 void drillSidewaysCollect(unsigned int topN,
+                          unsigned int docBase,
                           int *topDocIDs,
                           float *topScores,
                           unsigned int *filled,
                           int numFilled,
-                          unsigned int *docIDs,
+                          int *docIDs,
                           float *scores,
                           unsigned int *counts,
                           unsigned int *missingDims,
@@ -124,18 +125,35 @@ void drillSidewaysCollect(unsigned int topN,
   }
 
   // Collect:
+  int docChunkBase = docBase + docUpto;
   for(int i=0;i<numFilled;i++) {
     unsigned int slot = filled[i];
     unsigned int docID = docUpto + slot;
+    unsigned int topDocID = docChunkBase + slot;
     if (counts[slot] == 1+numDims) {
+      // A real hit
       setLongBit(hitBits, docID);
-      float score = scores[slot];
-      if (score > topScores[1] || (score == topScores[1] && docID < topDocIDs[1])) {
-        // Hit is competitive   
-        topDocIDs[1] = docID;
-        topScores[1] = score;
+      for(int j=0;j<numDims;j++) {
+        setLongBit(nearMissBits[j], docID);
+      }
+      if (scores != 0) {
+        float score = scores[slot];
+        if (score > topScores[1] || (score == topScores[1] && topDocID < topDocIDs[1])) {
+          // Hit is competitive   
+          topDocIDs[1] = topDocID;
+          topScores[1] = score;
 
-        downHeap(topN, topDocIDs, topScores);
+          downHeap(topN, topDocIDs, topScores);
+        }
+      } else {
+        // nocommit we can be much more efficient about this
+        // ... once queue is full we shouldn't check anymore:
+        if (topDocID < topDocIDs[1]) {
+          // Hit is competitive   
+          topDocIDs[1] = topDocID;
+
+          downHeapNoScores(topN, topDocIDs);
+        }
       }
     } else if (counts[slot] == numDims) {
       setLongBit(nearMissBits[missingDims[slot]], docID);

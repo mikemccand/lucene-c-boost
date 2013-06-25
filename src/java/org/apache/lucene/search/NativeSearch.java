@@ -118,8 +118,25 @@ public class NativeSearch {
 
       int numMustNot,
 
-      int numMust);
+      int numMust,
 
+      int dsNumDims,
+
+      int[] dsTermsPerDim,
+
+      long[] dsHitBits,
+
+      long[][] dsNearMissBits,
+
+      int[] dsSingletonDocIDs,
+
+      int[] dsDocFreqs,
+
+      long[] dsDocTermStartFPs,
+
+      long dsDocFileAddress
+      );
+  
   private static native int searchSegmentExactPhraseQuery(
       // PQ holding top hits so far, pre-filled with sentinel
       // values: 
@@ -1137,7 +1154,15 @@ public class NativeSearch {
                                                docTermStartFPs,
                                                address,
                                                numMustNot,
-                                               numMust);
+                                               numMust,
+                                               0,
+                                               null,
+                                               null,
+                                               null,
+                                               null,
+                                               null,
+                                               null,
+                                               0);
       }
     }
 
