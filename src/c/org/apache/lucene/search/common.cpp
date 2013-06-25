@@ -2533,3 +2533,10 @@ bool isSet(unsigned char *bits, unsigned int docID) {
   //fprintf(fp, "isSet docID=%d ret=%d\n", docID, x);fflush(fp);
   return x;
 }
+
+void setLongBit(unsigned long *bits, unsigned int index) {
+  int wordNum = index >> 6;      // div 64
+  int bit = index & 0x3f;     // mod 64
+  long bitmask = 1L << bit;
+  bits[wordNum] |= bitmask;
+}

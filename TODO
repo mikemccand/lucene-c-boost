@@ -5,8 +5,6 @@ structural diffs
 
 can we be agnostic to 4.3 vs 4.4?
 
-why are fuzzy queries now worse!
-
 add a "requireExactTotalHits" boolean
 
 install this w/ jirasearch!

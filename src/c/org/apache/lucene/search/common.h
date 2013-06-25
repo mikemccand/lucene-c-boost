@@ -169,6 +169,7 @@ int phraseQuery(PostingsState* subs,
                 int *posOffsets);
 
 bool isSet(unsigned char *bits, unsigned int docID);
+void setLongBit(unsigned long *bits, unsigned int docID);
 
 //#define DEBUG
 
