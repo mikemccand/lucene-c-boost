@@ -33,6 +33,7 @@ void drillSidewaysCollect(unsigned int topN,
                           PostingsState *subs,
                           int numDims,
                           unsigned int *termsPerDim,
+                          unsigned int *totalHits,
                           unsigned long *hitBits,
                           unsigned long **nearMissBits) {
 
@@ -136,6 +137,7 @@ void drillSidewaysCollect(unsigned int topN,
       for(int j=0;j<numDims;j++) {
         setLongBit(nearMissBits[j], docID);
       }
+      (*(totalHits))++;
       if (scores != 0) {
         float score = scores[slot];
         if (score > topScores[1] || (score == topScores[1] && topDocID < topDocIDs[1])) {
@@ -156,7 +158,9 @@ void drillSidewaysCollect(unsigned int topN,
         }
       }
     } else if (counts[slot] == numDims) {
-      setLongBit(nearMissBits[missingDims[slot]], docID);
+      unsigned int dim = missingDims[slot];
+      (*(totalHits+dim+1))++;
+      setLongBit(nearMissBits[dim], docID);
     }
   }
 }

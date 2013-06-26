@@ -95,6 +95,7 @@ int booleanQueryOnlyShould(PostingsState* subs,
                            unsigned int *dsCounts,
                            unsigned int *dsMissingDims,
                            unsigned int dsNumDims,
+                           unsigned int *dsTotalHits,
                            unsigned int *dsTermsPerDim,
                            unsigned long *dsHitBits,
                            unsigned long **dsNearMissBits);
@@ -189,6 +190,7 @@ void drillSidewaysCollect(unsigned int topN,
                           PostingsState *subs,
                           int numDims,
                           unsigned int *termsPerDim,
+                          unsigned int *totalHits,
                           unsigned long *hitBits,
                           unsigned long **nearMissBits);
 

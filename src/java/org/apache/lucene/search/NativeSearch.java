@@ -37,6 +37,15 @@ import org.apache.lucene.codecs.lucene40.Lucene40LiveDocsFormat;
 import org.apache.lucene.codecs.lucene41.Lucene41PostingsFormat;
 import org.apache.lucene.codecs.lucene42.Lucene42NormsFormat;
 import org.apache.lucene.codecs.perfield.PerFieldPostingsFormat;
+import org.apache.lucene.facet.params.FacetSearchParams;
+import org.apache.lucene.facet.search.DrillDownQuery;
+import org.apache.lucene.facet.search.DrillSideways.DrillSidewaysResult;
+import org.apache.lucene.facet.search.DrillSideways;
+import org.apache.lucene.facet.search.FacetRequest;
+import org.apache.lucene.facet.search.FacetsAccumulator;
+import org.apache.lucene.facet.search.FacetsCollector.MatchingDocs;
+import org.apache.lucene.facet.search.FacetsCollector;
+import org.apache.lucene.facet.search.StandardFacetsAccumulator;
 import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.index.DocsAndPositionsEnum;
 import org.apache.lucene.index.DocsEnum;
@@ -121,6 +130,8 @@ public class NativeSearch {
       int numMust,
 
       int dsNumDims,
+
+      int[] dsTotalHits,
 
       int[] dsTermsPerDim,
 
@@ -242,6 +253,251 @@ public class NativeSearch {
 
       boolean docsOnly);
 
+  /** Runs the equivalent of DrillSideways.search, using
+   *  optimized C++ code when possible, but otherwise
+   *  falling back on IndexSearcher. */
+  public static DrillSidewaysResult drillSidewaysSearch(DrillSideways ds, DrillDownQuery query, int topN, FacetSearchParams fsp) throws IOException {
+    //query = (DrillDownQuery) ((IndexSearcher) getFieldObject(ds, "org.apache.lucene.facet.search.DrillSideways", "indexSearcher")).rewrite(query);
+    try {
+      return _drillSidewaysSearch(ds, query, topN, fsp);
+    } catch (IllegalArgumentException iae) {
+      return ds.search(null, query, topN, fsp);
+    }
+  }
+
+  /** Runs the equivalent of DrillSideways.search, using
+   *  only optimized C++ code and otherwise throws
+   *  IllegalArgumentException explaining why the optimized
+   *  search did not apply.  Call this to understand why a
+   *  given search isn't optimized. */
+  public static DrillSidewaysResult drillSidewaysSearchNative(DrillSideways ds, DrillDownQuery query, int topN, FacetSearchParams fsp) throws IOException {
+    //query = ((IndexSearcher) getFieldObject(ds, "org.apache.lucene.facet.search.DrillSideways", "indexSearcher")).rewrite(query);
+    return _drillSidewaysSearch(ds, query, topN, fsp);
+  }
+
+  private static Object invoke(Method m, Object o, Object ... args) {
+    try {
+      return m.invoke(o, args);
+    } catch (Exception e) {
+      throw new IllegalStateException("reflection failed", e);
+    }
+  }
+
+  private static DrillSidewaysResult _drillSidewaysSearch(DrillSideways ds, DrillDownQuery query, int topN, FacetSearchParams fsp) throws IOException {
+    IndexSearcher searcher = (IndexSearcher) getFieldObject(ds, "org.apache.lucene.facet.search.DrillSideways", "indexSearcher");
+    Method m = getMethod("org.apache.lucene.facet.search.DrillSideways", "moveDrillDownOnlyClauses");
+    query = (DrillDownQuery) invoke(m, ds, query, fsp);
+    m = getMethod("org.apache.lucene.facet.search.DrillDownQuery", "getDims");
+    Map<String,Integer> drillDownDims = (Map<String,Integer>) invoke(m, query);
+
+    if (drillDownDims.isEmpty()) {
+      // nocommit do non-DS optimized faceting here, once
+      // that's added:
+      throw new IllegalArgumentException("no drill down dims");
+    }
+
+    BooleanClause[] clauses = ((BooleanQuery) getFieldObject(query, "org.apache.lucene.facet.search.DrillDownQuery", "query")).getClauses();
+
+    if (clauses.length == drillDownDims.size()) {
+      // TODO: we could optimize this pure-browse case by
+      // making a custom scorer instead:
+      throw new IllegalArgumentException("baseQuery must be non-null");
+    }
+    
+    Query baseQuery = clauses[0].getQuery();
+
+    // nocommit is this the right place?
+    baseQuery = searcher.rewrite(baseQuery);
+
+    String dsField = null;
+    int numDims = drillDownDims.size();
+    int[] termsPerDim = new int[numDims];
+    List<BytesRef> ddTerms = new ArrayList<BytesRef>();
+
+    // nocommit how to rule out aggregators that need
+    // float[] scores?
+    
+    for(int i=1;i<clauses.length;i++) {
+      Query q = clauses[i].getQuery();
+
+      // DrillDownQuery always wraps each subQuery in
+      // ConstantScoreQuery:
+      assert q instanceof ConstantScoreQuery;
+      q = ((ConstantScoreQuery) q).getQuery();
+
+      if (q instanceof TermQuery) {
+        // Single-select drill-down
+        Term ddTerm = ((TermQuery) q).getTerm();
+        if (dsField == null) {
+          dsField = ddTerm.field();
+        } else if (!dsField.equals(ddTerm.field())) {
+          throw new IllegalArgumentException("all drill-downs must be against a single field");
+        }
+        ddTerms.add(ddTerm.bytes());
+        termsPerDim[i] = 1;
+      } else {
+        // Muti-select drill-down
+        BooleanQuery q2 = (BooleanQuery) q;
+        BooleanClause[] clauses2 = q2.getClauses();
+        termsPerDim[i] = clauses2.length;
+        for(int j=0;j<clauses2.length;j++) {
+          if (clauses2[j].getQuery() instanceof TermQuery) {
+            Term ddTerm = ((TermQuery) clauses2[j].getQuery()).getTerm();
+            if (dsField == null) {
+              dsField = ddTerm.field();
+            } else if (!dsField.equals(ddTerm.field())) {
+              throw new IllegalArgumentException("all drill-downs must be against a single field");
+            }
+            ddTerms.add(ddTerm.bytes());
+          } else {
+            throw new IllegalArgumentException("all drill-downs must be against a single field");
+          }
+        }
+      }
+    }
+
+    List<FacetRequest> ddRequests = new ArrayList<FacetRequest>();
+    for(FacetRequest fr : fsp.facetRequests) {
+      assert fr.categoryPath.length > 0;
+      if (!drillDownDims.containsKey(fr.categoryPath.components[0])) {
+        ddRequests.add(fr);
+      }
+    }
+    FacetSearchParams fsp2;
+    if (!ddRequests.isEmpty()) {
+      fsp2 = new FacetSearchParams(fsp.indexingParams, ddRequests);
+    } else {
+      fsp2 = null;
+    }
+
+    SearchResult result = _search(searcher, baseQuery, topN, numDims, termsPerDim, dsField, ddTerms);
+
+    FacetSearchParams dsRequests[] = new FacetSearchParams[numDims];
+    FacetsAccumulator[] drillSidewaysAccumulators = new FacetsAccumulator[numDims];
+    int idx = 0;
+    for(String dim : drillDownDims.keySet()) {
+      List<FacetRequest> requests = new ArrayList<FacetRequest>();
+      for(FacetRequest fr : fsp.facetRequests) {
+        assert fr.categoryPath.length > 0;
+        if (fr.categoryPath.components[0].equals(dim)) {
+          requests.add(fr);
+        }
+      }
+      if (requests.isEmpty()) {
+        throw new IllegalArgumentException("could not find FacetRequest for drill-sideways dimension \"" + dim + "\"");
+      }
+      m = getMethod("org.apache.lucene.facet.search.DrillSideways", "getDrillSidewaysAccumulator");
+      drillSidewaysAccumulators[idx++] = (FacetsAccumulator) invoke(m, ds, dim, new FacetSearchParams(fsp.indexingParams, requests));
+      if (drillSidewaysAccumulators[idx++] instanceof StandardFacetsAccumulator) {
+        throw new IllegalArgumentException("accumulator must not be StandardFacetsAccumulator");
+      }
+    }
+
+    m = getMethod("org.apache.lucene.facet.search.DrillSideways", "getDrillDownAccumulator");
+    FacetsAccumulator drillDownAccumulator = fsp2 == null ? null : (FacetsAccumulator) invoke(m, ds, fsp2);
+    if (drillDownAccumulator != null && (drillDownAccumulator instanceof StandardFacetsAccumulator)) {
+      throw new IllegalArgumentException("accumulator must not be StandardFacetsAccumulator");
+    }
+
+    return null;
+  }
+
+  private static class DrillSidewaysState {
+    public final int[] docFreqs;
+    public final int[] singletonDocIDs;
+    public final long[] totalTermFreqs;
+    public final long[] docTermStartFPs;
+    public final FixedBitSet ddBits;
+    public final long[] ddBitsArray;
+    public final FixedBitSet[] dsBits;
+    public final long[][] dsBitsArrays;
+    public final long address;
+    public final int[] termsPerDim;
+    public final int[] totalHits;
+
+    public DrillSidewaysState(SegmentState state, int dsNumDims, int[] dsTermsPerDim, String dsField, List<BytesRef> dsTerms) throws IOException {
+      if (dsNumDims == 0) {
+        docFreqs = null;
+        singletonDocIDs = null;
+        totalTermFreqs = null;
+        docTermStartFPs = null;
+        ddBits = null;
+        ddBitsArray = null;
+        dsBits = null;
+        dsBitsArrays = null;
+        address = 0;
+        termsPerDim = null;
+        totalHits = null;
+        return;
+      }
+      this.termsPerDim = dsTermsPerDim;
+      docFreqs = new int[dsTerms.size()];
+      singletonDocIDs = new int[dsTerms.size()];
+      totalTermFreqs = new long[dsTerms.size()];
+      docTermStartFPs = new long[dsTerms.size()];
+      totalHits = new int[1+dsNumDims];
+      int dimUpto = 0;
+      Terms terms = state.reader.terms(dsField);
+      if (terms == null) {
+        throw new IllegalArgumentException("facet field does not exist");
+      }
+      TermsEnum termsEnum = terms.iterator(null);
+      int termUpto = 0;
+      int lastNumValidTerms = 0;
+      long address = 0;
+      for(int i=0;i<dsNumDims;i++) {
+        int numValidTerms = 0;
+        for(int j=0;j<dsTermsPerDim[i];j++) {
+          BytesRef term = dsTerms.get(termUpto++);
+          if (termsEnum.seekExact(term, false)) {
+            DocsEnum docsEnum = termsEnum.docs(null, null, 0);
+            if (docsEnum != null) {
+              docFreqs[numValidTerms] = getIntField(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "docFreq");
+              totalTermFreqs[numValidTerms] = getLongField(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "totalTermFreq");
+              if (docFreqs[numValidTerms] > 1) {
+                singletonDocIDs[numValidTerms] = -1;
+                docTermStartFPs[i] = getLongField(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "docTermStartFP");
+              } else {
+                singletonDocIDs[numValidTerms] = getIntField(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "singletonDocID");
+              }
+              if (address == 0) {
+                IndexInput docIn = (IndexInput) getFieldObject(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "docIn");
+                address = getMMapAddress(unwrap(docIn));
+              }
+              numValidTerms++;
+            }
+          }
+          dsTermsPerDim[i] = numValidTerms - lastNumValidTerms;
+          lastNumValidTerms = numValidTerms;
+        }
+      }
+      this.address = address;
+      ddBits = new FixedBitSet(state.maxDoc);
+      ddBitsArray = (long[]) getFieldObject(ddBits, "org.apache.lucene.util.FixedBitSet", "bits");
+      dsBits = new FixedBitSet[dsNumDims];
+      dsBitsArrays = new long[dsNumDims][];
+      for(int i=0;i<dsNumDims;i++) {
+        dsBits[i] = new FixedBitSet(state.maxDoc);
+        dsBitsArrays[i] = (long[]) getFieldObject(dsBits[i], "org.apache.lucene.util.FixedBitSet", "bits");
+      }
+    }
+  }
+
+  private static class SearchResult {
+    final TopDocs hits;
+    final List<MatchingDocs> dsBits;
+
+    public SearchResult(TopDocs hits) {
+      this.hits = hits;
+      this.dsBits = null;
+    }
+
+    public SearchResult(TopDocs hits, List<MatchingDocs> dsBits) {
+      this.hits = hits;
+      this.dsBits = dsBits;
+    }
+  }
+
   /** Runs the search, using optimized C++ code when
    *  possible, but otherwise falling back on
    *  IndexSearcher. */
@@ -251,7 +507,7 @@ public class NativeSearch {
     //System.out.println("NATIVE: after rewrite: " + query);
 
     try {
-      TopDocs hits = _search(searcher, query, topN);
+      TopDocs hits = _search(searcher, query, topN, 0, null, null, null).hits;
       //System.out.println("NATIVE: " + hits.totalHits + " hits");
       return hits;
     } catch (IllegalArgumentException iae) {
@@ -260,14 +516,15 @@ public class NativeSearch {
     }
   }
 
-  /** Runs the search using only optimized C++ code; if the
-   *  search cannot be optimized then {@code
-   *  IllegalArgumentException} is thrown with the reason. */
+  /** Runs the search.search, using only optimized C++ code
+   *  and otherwise throws IllegalArgumentException
+   *  explaining why the optimized search did not apply.
+   *  Call this to understand why a given search isn't optimized. */ 
   public static TopDocs searchNative(IndexSearcher searcher, Query query, int topN) throws IOException {
     //System.out.println("NATIVE: query in=" + query);
     query = searcher.rewrite(query);
     //System.out.println("NATIVE: after rewrite: " + query + "; " + query.getClass());
-    return _search(searcher, query, topN);
+    return _search(searcher, query, topN, 0, null, null, null).hits;
   }
   
   private static class SegmentState {
@@ -326,7 +583,8 @@ public class NativeSearch {
     }
   }
 
-  private static TopDocs _search(IndexSearcher searcher, Query query, int topN) throws IOException {
+  private static SearchResult _search(IndexSearcher searcher, Query query, int topN, int dsNumDims, int[] dsTermsPerDim,
+                                      String dsField, List<BytesRef> dsTerms) throws IOException {
 
     if (topN == 0) {
       throw new IllegalArgumentException("topN must be > 0; got: 0");
@@ -361,13 +619,13 @@ public class NativeSearch {
     } else if (query instanceof PhraseQuery) {
       return _searchPhraseQuery(searcher, (PhraseQuery) query, topN, constantScore);
     } else if (query instanceof BooleanQuery) {
-      return _searchBooleanQuery(searcher, (BooleanQuery) query, topN, constantScore);
+      return _searchBooleanQuery(searcher, (BooleanQuery) query, topN, constantScore, dsNumDims, dsTermsPerDim, dsField, dsTerms);
     } else {
       throw new IllegalArgumentException("rewritten query must be TermQuery, BooleanQuery or PhraseQuery; got: " + query.getClass());
     }
   }
 
-  private static TopDocs _searchMTQFilter(IndexSearcher searcher, MultiTermQueryWrapperFilter filter, int topN, float constantScore) throws IOException {
+  private static SearchResult _searchMTQFilter(IndexSearcher searcher, MultiTermQueryWrapperFilter filter, int topN, float constantScore) throws IOException {
     //System.out.println("MTQ search");
     List<AtomicReaderContext> leaves = searcher.getIndexReader().leaves();
     Similarity sim = searcher.getSimilarity();
@@ -491,7 +749,7 @@ public class NativeSearch {
       */
     }
 
-    return new TopDocs(totalHits, scoreDocs.toArray(new ScoreDoc[scoreDocs.size()]), scoreDocs.isEmpty() ? Float.NaN : constantScore);
+    return new SearchResult(new TopDocs(totalHits, scoreDocs.toArray(new ScoreDoc[scoreDocs.size()]), scoreDocs.isEmpty() ? Float.NaN : constantScore));
   }
 
   static final Field blockTermStateDocStartFPField;
@@ -657,7 +915,7 @@ public class NativeSearch {
     }
   }
 
-  private static TopDocs _searchTermQuery(IndexSearcher searcher, TermQuery query, int topN, float constantScore) throws IOException {
+  private static SearchResult _searchTermQuery(IndexSearcher searcher, TermQuery query, int topN, float constantScore) throws IOException {
 
     List<AtomicReaderContext> leaves = searcher.getIndexReader().leaves();
     //System.out.println("_searchTermQuery: " + leaves.size() + " segments; query=" + query);
@@ -749,10 +1007,10 @@ public class NativeSearch {
       }
     }
 
-    return buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore);
+    return new SearchResult(buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore));
   }
 
-  private static TopDocs _searchPhraseQuery(IndexSearcher searcher, PhraseQuery query, int topN, float constantScore) throws IOException {
+  private static SearchResult _searchPhraseQuery(IndexSearcher searcher, PhraseQuery query, int topN, float constantScore) throws IOException {
 
     if (query.getSlop() != 0) {
       throw new IllegalArgumentException("can only handle slop=0; got " + query.getSlop());
@@ -877,10 +1135,11 @@ public class NativeSearch {
       }
     }
 
-    return buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore);
+    return new SearchResult(buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore));
   }
 
-  private static TopDocs _searchBooleanQuery(IndexSearcher searcher, BooleanQuery query, int topN, float constantScore) throws IOException {
+  private static SearchResult _searchBooleanQuery(IndexSearcher searcher, BooleanQuery query, int topN, float constantScore,
+                                                  int dsNumDims, int[] dsTermsPerDim, String dsField, List<BytesRef> dsTerms) throws IOException {
 
     List<AtomicReaderContext> leaves = searcher.getIndexReader().leaves();
     Similarity sim = searcher.getSimilarity();
@@ -897,7 +1156,7 @@ public class NativeSearch {
 
     BooleanClause[] clauses = query.getClauses();
     if (clauses.length == 0) {
-      return new TopDocs(0, new ScoreDoc[0]);
+      return new SearchResult(new TopDocs(0, new ScoreDoc[0]));
     }
 
     String field = null;
@@ -1131,6 +1390,8 @@ public class NativeSearch {
           }
         }.mergeSort(0, scorers.size()-1);
 
+        DrillSidewaysState dsState = new DrillSidewaysState(state, dsNumDims, dsTermsPerDim, dsField, dsTerms);
+
         /*
         System.out.println("numMustNot=" + numMustNot);
         for(int i=0;i<scorers.size();i++) {
@@ -1155,18 +1416,19 @@ public class NativeSearch {
                                                address,
                                                numMustNot,
                                                numMust,
-                                               0,
-                                               null,
-                                               null,
-                                               null,
-                                               null,
-                                               null,
-                                               null,
-                                               0);
+                                               dsNumDims,
+                                               dsState.totalHits,
+                                               dsState.termsPerDim,
+                                               dsState.ddBitsArray,
+                                               dsState.dsBitsArrays,
+                                               dsState.singletonDocIDs,
+                                               dsState.docFreqs,
+                                               dsState.docTermStartFPs,
+                                               dsState.address);
       }
     }
 
-    return buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore);
+    return new SearchResult(buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore));
   }
 
   private static TopDocs buildTopDocs(int[] topDocIDs, float[] topScores, int totalHits, int topN, float constantScore) {

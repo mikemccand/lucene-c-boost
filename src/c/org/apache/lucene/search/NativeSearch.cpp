@@ -155,6 +155,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
 
    jint dsNumDims,
 
+   jintArray jdsTotalHits,
+
    jintArray jdsTermsPerDim,
 
    jlongArray jdsHitBits,
@@ -205,6 +207,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   unsigned long **dsNearMissBits = 0;
   unsigned long *dsDocTermStartFPs = 0;
   int *dsSingletonDocIDs = 0;
+  unsigned int *dsTotalHits = 0;
 
   if (dsNumDims > 0) {
     dsCounts = (unsigned int *) malloc(CHUNK * sizeof(int));
@@ -219,6 +222,11 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
     }
     dsTermsPerDim = (unsigned int *) env->GetIntArrayElements(jdsTermsPerDim, 0);
     if (dsTermsPerDim == 0) {
+      failed = true;
+      goto end;
+    }
+    dsTotalHits = (unsigned int *) env->GetIntArrayElements(jdsTotalHits, 0);
+    if (dsTotalHits == 0) {
       failed = true;
       goto end;
     }
@@ -419,7 +427,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
     hitCount = booleanQueryOnlyShould(subs, liveDocsBytes, termScoreCache, termWeights,
                                       maxDoc, topN, numScorers, docBase, filled, docIDs, scores, coords,
                                       topScores, topDocIDs, coordFactors, normTable,
-                                      norms, dsSubs, dsCounts, dsMissingDims, dsNumDims, dsTermsPerDim, dsHitBits, dsNearMissBits);
+                                      norms, dsSubs, dsCounts, dsMissingDims, dsNumDims, dsTotalHits, dsTermsPerDim, dsHitBits, dsNearMissBits);
   } else if (numMust == 0) {
     // At least one MUST_NOT and at least one SHOULD:
     hitCount = booleanQueryShouldMustNot(subs, liveDocsBytes, termScoreCache, termWeights,
@@ -483,6 +491,9 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   }
   if (dsTermsPerDim != 0) {
     env->ReleaseIntArrayElements(jdsTermsPerDim, (int *) dsTermsPerDim, JNI_ABORT);
+  }
+  if (dsTotalHits != 0) {
+    env->ReleaseIntArrayElements(jdsTotalHits, (int *) dsTotalHits, 0);
   }
   if (dsHitBits != 0) {
     env->ReleasePrimitiveArrayCritical(jdsHitBits, dsHitBits, JNI_ABORT);

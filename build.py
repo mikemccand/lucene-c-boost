@@ -49,7 +49,9 @@ def toClassPath(deps):
   return ':'.join(l)
 
 DEPS = (
-  ('org.apache.lucene', 'lucene-core', '4.3.0'),)
+  ('org.apache.lucene', 'lucene-core', '4.3.0'),
+  ('org.apache.lucene', 'lucene-facet', '4.3.0'),
+  )
 
 TEST_DEPS = (
   ('junit', 'junit', '4.10'),

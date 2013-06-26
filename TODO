@@ -5,6 +5,8 @@ structural diffs
 
 handle BQ over DOCS_ONLY?
 
+hmm queries that are expensive to rewrite but then native boost doesn't apply, are slower!!
+
 can we be agnostic to 4.3 vs 4.4?
 
 add a "requireExactTotalHits" boolean
