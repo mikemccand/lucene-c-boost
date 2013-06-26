@@ -42,6 +42,7 @@ import org.apache.lucene.facet.search.DrillDownQuery;
 import org.apache.lucene.facet.search.DrillSideways.DrillSidewaysResult;
 import org.apache.lucene.facet.search.DrillSideways;
 import org.apache.lucene.facet.search.FacetRequest;
+import org.apache.lucene.facet.search.FacetResult;
 import org.apache.lucene.facet.search.FacetsAccumulator;
 import org.apache.lucene.facet.search.FacetsCollector.MatchingDocs;
 import org.apache.lucene.facet.search.FacetsCollector;
@@ -356,6 +357,9 @@ public class NativeSearch {
       }
     }
 
+    // nocommit if fsp2 is null we don't need the dd bitset:
+    SearchResult rawResult = _search(searcher, baseQuery, topN, numDims, termsPerDim, dsField, ddTerms);
+
     List<FacetRequest> ddRequests = new ArrayList<FacetRequest>();
     for(FacetRequest fr : fsp.facetRequests) {
       assert fr.categoryPath.length > 0;
@@ -370,9 +374,6 @@ public class NativeSearch {
       fsp2 = null;
     }
 
-    SearchResult result = _search(searcher, baseQuery, topN, numDims, termsPerDim, dsField, ddTerms);
-
-    FacetSearchParams dsRequests[] = new FacetSearchParams[numDims];
     FacetsAccumulator[] drillSidewaysAccumulators = new FacetsAccumulator[numDims];
     int idx = 0;
     for(String dim : drillDownDims.keySet()) {
@@ -383,9 +384,7 @@ public class NativeSearch {
           requests.add(fr);
         }
       }
-      if (requests.isEmpty()) {
-        throw new IllegalArgumentException("could not find FacetRequest for drill-sideways dimension \"" + dim + "\"");
-      }
+      assert !requests.isEmpty();
       m = getMethod("org.apache.lucene.facet.search.DrillSideways", "getDrillSidewaysAccumulator");
       drillSidewaysAccumulators[idx++] = (FacetsAccumulator) invoke(m, ds, dim, new FacetSearchParams(fsp.indexingParams, requests));
       if (drillSidewaysAccumulators[idx++] instanceof StandardFacetsAccumulator) {
@@ -399,37 +398,76 @@ public class NativeSearch {
       throw new IllegalArgumentException("accumulator must not be StandardFacetsAccumulator");
     }
 
-    return null;
+    List<FacetResult>[] drillSidewaysResults = new List[numDims];
+    List<FacetResult> drillDownResults = null;
+
+    List<FacetResult> mergedResults = new ArrayList<FacetResult>();
+    int[] requestUpto = new int[drillDownDims.size()];
+    for(int i=0;i<fsp.facetRequests.size();i++) {
+      FacetRequest fr = fsp.facetRequests.get(i);
+      assert fr.categoryPath.length > 0;
+      Integer dimIndex = drillDownDims.get(fr.categoryPath.components[0]);
+      if (dimIndex == null) {
+        // Pure drill down dim (the current query didn't
+        // drill down on this dim):
+        if (drillDownResults == null) {
+          // Lazy init, in case all requests were against
+          // drill-sideways dims:
+
+          List<MatchingDocs> matchingDocs = new ArrayList<MatchingDocs>();
+          for(DrillSidewaysState dsState : rawResult.dsRawResults) {
+            matchingDocs.add(new MatchingDocs(dsState.ctx, dsState.ddBits, dsState.totalHits[0], null));
+          }
+          drillDownResults = drillDownAccumulator.accumulate(matchingDocs);
+        }
+        mergedResults.add(drillDownResults.get(i));
+      } else {
+        // Drill sideways dim:
+        int dim = dimIndex.intValue();
+        List<FacetResult> sidewaysResult = drillSidewaysResults[dim];
+        if (sidewaysResult == null) {
+          // Lazy init, in case no facet request is against
+          // a given drill down dim:
+          List<MatchingDocs> matchingDocs = new ArrayList<MatchingDocs>();
+          for(DrillSidewaysState dsState : rawResult.dsRawResults) {
+            matchingDocs.add(new MatchingDocs(dsState.ctx, dsState.dsBits[dim], dsState.totalHits[1+dim], null));
+          }
+          sidewaysResult = drillSidewaysAccumulators[dim].accumulate(matchingDocs);
+          drillSidewaysResults[dim] = sidewaysResult;
+        }
+        mergedResults.add(sidewaysResult.get(requestUpto[dim]));
+        requestUpto[dim]++;
+      }
+    }
+
+    Constructor c = getConstructor("org.apache.lucene.facet.search.DrillSideways$DrillSidewaysResult",
+                                   List.class,  TopDocs.class);
+    try {
+      return (DrillSidewaysResult) c.newInstance(mergedResults, rawResult.hits);
+    } catch (Exception e) {
+      throw new IllegalStateException("reflection failed", e);
+    }
   }
 
   private static class DrillSidewaysState {
-    public final int[] docFreqs;
-    public final int[] singletonDocIDs;
-    public final long[] totalTermFreqs;
-    public final long[] docTermStartFPs;
-    public final FixedBitSet ddBits;
-    public final long[] ddBitsArray;
-    public final FixedBitSet[] dsBits;
-    public final long[][] dsBitsArrays;
-    public final long address;
-    public final int[] termsPerDim;
-    public final int[] totalHits;
+    public int[] docFreqs;
+    public int[] singletonDocIDs;
+    public long[] totalTermFreqs;
+    public long[] docTermStartFPs;
+    public FixedBitSet ddBits;
+    public long[] ddBitsArray;
+    public FixedBitSet[] dsBits;
+    public long[][] dsBitsArrays;
+    public long address;
+    public int[] termsPerDim;
+    public int[] totalHits;
+    public AtomicReaderContext ctx;
 
     public DrillSidewaysState(SegmentState state, int dsNumDims, int[] dsTermsPerDim, String dsField, List<BytesRef> dsTerms) throws IOException {
       if (dsNumDims == 0) {
-        docFreqs = null;
-        singletonDocIDs = null;
-        totalTermFreqs = null;
-        docTermStartFPs = null;
-        ddBits = null;
-        ddBitsArray = null;
-        dsBits = null;
-        dsBitsArrays = null;
-        address = 0;
-        termsPerDim = null;
-        totalHits = null;
         return;
       }
+      ctx = state.ctx;
       this.termsPerDim = dsTermsPerDim;
       docFreqs = new int[dsTerms.size()];
       singletonDocIDs = new int[dsTerms.size()];
@@ -485,16 +523,16 @@ public class NativeSearch {
 
   private static class SearchResult {
     final TopDocs hits;
-    final List<MatchingDocs> dsBits;
+    final List<DrillSidewaysState> dsRawResults;
 
     public SearchResult(TopDocs hits) {
       this.hits = hits;
-      this.dsBits = null;
+      this.dsRawResults = null;
     }
 
-    public SearchResult(TopDocs hits, List<MatchingDocs> dsBits) {
+    public SearchResult(TopDocs hits, List<DrillSidewaysState> dsRawResults) {
       this.hits = hits;
-      this.dsBits = dsBits;
+      this.dsRawResults = dsRawResults;
     }
   }
 
@@ -534,12 +572,14 @@ public class NativeSearch {
     boolean skip;
     boolean docsOnly;
     Bits liveDocs;
+    AtomicReaderContext ctx;
     int maxDoc;
 
     public SegmentState(AtomicReaderContext ctx, String field) throws IOException {
       if (!(ctx.reader() instanceof SegmentReader)) {
         throw new IllegalArgumentException("leaves must be SegmentReaders; got: " + ctx.reader());
       }
+      this.ctx = ctx;
       reader = (SegmentReader) ctx.reader();
       maxDoc = reader.maxDoc();
       Directory dir = unwrap(reader.directory());
@@ -868,6 +908,17 @@ public class NativeSearch {
       return f;
     } catch (Exception e) {
       throw new RuntimeException("failed to get method=" + methodName + " from class=" + className, e);
+    }
+  }
+
+  private static Constructor getConstructor(String className, Class<?>... params) {
+    try {
+      Class<?> x = Class.forName(className);
+      Constructor f = x.getDeclaredConstructor(params);
+      f.setAccessible(true);
+      return f;
+    } catch (Exception e) {
+      throw new RuntimeException("failed to get constructor for class=" + className, e);
     }
   }
 
@@ -1214,6 +1265,8 @@ public class NativeSearch {
     int totalHits = 0;
     float[] normTable = getNormTable();
 
+    List<DrillSidewaysState> dsStates = new ArrayList<DrillSidewaysState>();
+
     for(int readerIDX=0;readerIDX<leaves.size();readerIDX++) {
 
       AtomicReaderContext ctx = leaves.get(readerIDX);
@@ -1391,6 +1444,7 @@ public class NativeSearch {
         }.mergeSort(0, scorers.size()-1);
 
         DrillSidewaysState dsState = new DrillSidewaysState(state, dsNumDims, dsTermsPerDim, dsField, dsTerms);
+        dsStates.add(dsState);
 
         /*
         System.out.println("numMustNot=" + numMustNot);
@@ -1425,10 +1479,12 @@ public class NativeSearch {
                                                dsState.docFreqs,
                                                dsState.docTermStartFPs,
                                                dsState.address);
+      } else {
+        dsStates.add(new DrillSidewaysState(state, dsNumDims, dsTermsPerDim, dsField, dsTerms));
       }
     }
 
-    return new SearchResult(buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore));
+    return new SearchResult(buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore), dsStates);
   }
 
   private static TopDocs buildTopDocs(int[] topDocIDs, float[] topScores, int totalHits, int topN, float constantScore) {

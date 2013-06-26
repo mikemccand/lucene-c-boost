@@ -1,6 +1,6 @@
 #About
 <p>
-Optimized implementations of certain [Apache Lucene](http://lucene.apache.org) queries in C++ (via JNI) for anywhere from 0 to 6X speedup:
+Optimized implementations of certain [Apache Lucene](http://lucene.apache.org) queries in C++ (via JNI) for anywhere from 0 to 7.8X speedup:
 
                     Task    QPS base      StdDev    QPS comp      StdDev                Pct diff
               AndHighLow      467.01      (0.5%)      294.88      (0.2%)  -36.9% ( -37% -  -36%)
