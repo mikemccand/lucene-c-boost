@@ -998,7 +998,7 @@ public class TestNativeSearch extends LuceneTestCase {
     add(facetFields, doc, "vendor/Intel", "speed/Fast");
     w.addDocument(doc);
     doc = new Document();
-    doc.add(new TextField("field", "x", Field.Store.NO));
+    doc.add(new TextField("field", "x y", Field.Store.NO));
     add(facetFields, doc, "vendor/AMD", "speed/Slow");
     w.addDocument(doc);
 
@@ -1052,6 +1052,23 @@ public class TestNativeSearch extends LuceneTestCase {
     ddq = new DrillDownQuery(fsp.indexingParams, bq);
     ddq.add(new CategoryPath("vendor", "Intel"));
     ddq.add(new CategoryPath("speed", "Fast"));
+    //System.out.println("ddq: " + ddq);
+    assertSameHits(ds, ddq, fsp);
+
+    dsResult = NativeSearch.drillSidewaysSearchNative(ds, ddq, 10, fsp);
+    assertEquals(1, dsResult.hits.totalHits);
+    assertEquals(0, dsResult.hits.scoreDocs[0].doc);
+    assertEquals(2, dsResult.facetResults.size());
+    assertEquals("vendor (0)\n  Intel (1)\n", toSimpleString(dsResult.facetResults.get(0)));
+    assertEquals("speed (0)\n  Fast (1)\n", toSimpleString(dsResult.facetResults.get(1)));
+
+    // SHOULD + MUST_NOT
+    //System.out.println("TEST: should + must_not");
+    bq = new BooleanQuery();
+    bq.add(new TermQuery(new Term("field", "x")), BooleanClause.Occur.SHOULD);
+    bq.add(new TermQuery(new Term("field", "y")), BooleanClause.Occur.MUST_NOT);
+    ddq = new DrillDownQuery(fsp.indexingParams, bq);
+    ddq.add(new CategoryPath("vendor", "Intel"));
     //System.out.println("ddq: " + ddq);
     assertSameHits(ds, ddq, fsp);
 

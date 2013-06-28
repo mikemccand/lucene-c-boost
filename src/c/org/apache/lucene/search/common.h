@@ -118,7 +118,16 @@ int booleanQueryShouldMustNot(PostingsState* subs,
                               float *coordFactors,
                               float *normTable,
                               unsigned char *norms,
-                              unsigned char *skips);
+                              unsigned char *skips,
+                              PostingsState *dsSubs,
+                              unsigned int *dsCounts,
+                              unsigned int *dsMissingDims,
+                              unsigned int dsNumDims,
+                              unsigned int *dsTotalHits,
+                              unsigned int *dsTermsPerDim,
+                              unsigned long *dsHitBits,
+                              unsigned long **dsNearMissBits);
+
 
 int booleanQueryShouldMust(PostingsState* subs,
                            unsigned char *liveDocsBytes,
@@ -202,7 +211,8 @@ void setLongBit(unsigned long *bits, unsigned int docID);
 //#define DEBUG
 
 #ifndef DEBUG
-#define printf NO
-#define fflush NO
+// nocommit put back
+//#define printf NO
+//#define fflush NO
 #endif
 

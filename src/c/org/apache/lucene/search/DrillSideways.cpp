@@ -39,8 +39,8 @@ unsigned int drillSidewaysCollect(unsigned int topN,
                                   unsigned int *termsPerDim,
                                   unsigned int *totalHits,
                                   unsigned long *hitBits,
-                                  unsigned long **nearMissBits) {
-
+                                  unsigned long **nearMissBits)
+{
   int subUpto = 0;
   unsigned int hitCount = 0;
 
@@ -139,12 +139,11 @@ unsigned int drillSidewaysCollect(unsigned int topN,
     }
   }
 
-  //printf("now collect %d\n", numFilled);fflush(stdout);
-
   // Collect:
   int docChunkBase = docBase + docUpto;
   for(int i=0;i<numFilled;i++) {
     unsigned int slot = filled[i];
+    //printf("  keep slot=%d\n", slot);
     //printf("  slot: %d\n", slot);fflush(stdout);
     unsigned int docID = docUpto + slot;
     unsigned int topDocID = docChunkBase + slot;
@@ -188,5 +187,6 @@ unsigned int drillSidewaysCollect(unsigned int topN,
     missingDims[slot] = 0;
   }
 
+  //printf("  ret hitCount=%d\n", hitCount);fflush(stdout);
   return hitCount;
 }

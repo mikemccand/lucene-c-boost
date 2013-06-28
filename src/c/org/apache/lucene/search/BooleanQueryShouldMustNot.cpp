@@ -269,10 +269,19 @@ int booleanQueryShouldMustNot(PostingsState* subs,
                               float *coordFactors,
                               float *normTable,
                               unsigned char *norms,
-                              unsigned char *skips) {
-
+                              unsigned char *skips,
+                              PostingsState *dsSubs,
+                              unsigned int *dsCounts,
+                              unsigned int *dsMissingDims,
+                              unsigned int dsNumDims,
+                              unsigned int *dsTotalHits,
+                              unsigned int *dsTermsPerDim,
+                              unsigned long *dsHitBits,
+                              unsigned long **dsNearMissBits)
+{
   int docUpto = 0;
   int hitCount = 0;
+  //printf("smn\n");fflush(stdout);
 
   while (docUpto < maxDoc) {
     int endDoc = docUpto + CHUNK;
@@ -292,11 +301,30 @@ int booleanQueryShouldMustNot(PostingsState* subs,
       }
     }
 
-    hitCount += numFilled;
-
     int docChunkBase = docBase + docUpto;
 
-    if (topScores == 0) {
+    if (dsNumDims > 0) {
+      hitCount += drillSidewaysCollect(topN,
+                                       docBase,
+                                       topDocIDs,
+                                       topScores,
+                                       normTable,
+                                       norms,
+                                       filled,
+                                       numFilled,
+                                       docIDs,
+                                       scores,
+                                       dsCounts,
+                                       dsMissingDims,
+                                       docUpto,
+                                       dsSubs,
+                                       dsNumDims,
+                                       dsTermsPerDim,
+                                       dsTotalHits,
+                                       dsHitBits,
+                                       dsNearMissBits);
+    } else if (topScores == 0) {
+      hitCount += numFilled;
       for(int i=0;i<numFilled;i++) {
         int slot = filled[i];
         if (skips[slot]) {
@@ -313,7 +341,7 @@ int booleanQueryShouldMustNot(PostingsState* subs,
         }
       }
     } else {
-
+      hitCount += numFilled;
       // Collect:
       //printf("collect:\n");
       for(int i=0;i<numFilled;i++) {
