@@ -3,6 +3,9 @@ structural diffs
   - sending MUST_NOT to BS
   - ExactPhraseQuery stopping after phraseFreq=1 when hit cannot compete (but must be counted)
 
+DS
+  - handle pure DD too
+
 handle BQ over DOCS_ONLY?
 
 hmm queries that are expensive to rewrite but then native boost doesn't apply, are slower!!

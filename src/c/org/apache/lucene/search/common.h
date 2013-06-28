@@ -176,23 +176,23 @@ int phraseQuery(PostingsState* subs,
                 unsigned char *norms,
                 int *posOffsets);
 
-void drillSidewaysCollect(unsigned int topN,
-                          unsigned int docBase,
-                          int *topDocIDs,
-                          float *topScores,
-                          unsigned int *filled,
-                          int numFilled,
-                          int *docIDs,
-                          float *scores,
-                          unsigned int *counts,
-                          unsigned int *missingDims,
-                          unsigned int docUpto,
-                          PostingsState *subs,
-                          int numDims,
-                          unsigned int *termsPerDim,
-                          unsigned int *totalHits,
-                          unsigned long *hitBits,
-                          unsigned long **nearMissBits);
+unsigned int drillSidewaysCollect(unsigned int topN,
+                                  unsigned int docBase,
+                                  int *topDocIDs,
+                                  float *topScores,
+                                  unsigned int *filled,
+                                  int numFilled,
+                                  int *docIDs,
+                                  float *scores,
+                                  unsigned int *counts,
+                                  unsigned int *missingDims,
+                                  unsigned int docUpto,
+                                  PostingsState *subs,
+                                  int numDims,
+                                  unsigned int *termsPerDim,
+                                  unsigned int *totalHits,
+                                  unsigned long *hitBits,
+                                  unsigned long **nearMissBits);
 
 bool isSet(unsigned char *bits, unsigned int docID);
 void setLongBit(unsigned long *bits, unsigned int docID);
@@ -200,7 +200,8 @@ void setLongBit(unsigned long *bits, unsigned int docID);
 //#define DEBUG
 
 #ifndef DEBUG
-#define printf NO
-#define fflush NO
+// nocommit put back
+//#define printf NO
+//#define fflush NO
 #endif
 

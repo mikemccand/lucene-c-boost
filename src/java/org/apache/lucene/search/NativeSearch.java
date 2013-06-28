@@ -285,8 +285,8 @@ public class NativeSearch {
   }
 
   private static DrillSidewaysResult _drillSidewaysSearch(DrillSideways ds, DrillDownQuery query, int topN, FacetSearchParams fsp) throws IOException {
-    IndexSearcher searcher = (IndexSearcher) getFieldObject(ds, "org.apache.lucene.facet.search.DrillSideways", "indexSearcher");
-    Method m = getMethod("org.apache.lucene.facet.search.DrillSideways", "moveDrillDownOnlyClauses");
+    IndexSearcher searcher = (IndexSearcher) getFieldObject(ds, "org.apache.lucene.facet.search.DrillSideways", "searcher");
+    Method m = getMethod("org.apache.lucene.facet.search.DrillSideways", "moveDrillDownOnlyClauses", DrillDownQuery.class, FacetSearchParams.class);
     query = (DrillDownQuery) invoke(m, ds, query, fsp);
     m = getMethod("org.apache.lucene.facet.search.DrillDownQuery", "getDims");
     Map<String,Integer> drillDownDims = (Map<String,Integer>) invoke(m, query);
@@ -335,12 +335,12 @@ public class NativeSearch {
           throw new IllegalArgumentException("all drill-downs must be against a single field");
         }
         ddTerms.add(ddTerm.bytes());
-        termsPerDim[i] = 1;
+        termsPerDim[i-1] = 1;
       } else {
         // Muti-select drill-down
         BooleanQuery q2 = (BooleanQuery) q;
         BooleanClause[] clauses2 = q2.getClauses();
-        termsPerDim[i] = clauses2.length;
+        termsPerDim[i-1] = clauses2.length;
         for(int j=0;j<clauses2.length;j++) {
           if (clauses2[j].getQuery() instanceof TermQuery) {
             Term ddTerm = ((TermQuery) clauses2[j].getQuery()).getTerm();
@@ -385,14 +385,16 @@ public class NativeSearch {
         }
       }
       assert !requests.isEmpty();
-      m = getMethod("org.apache.lucene.facet.search.DrillSideways", "getDrillSidewaysAccumulator");
-      drillSidewaysAccumulators[idx++] = (FacetsAccumulator) invoke(m, ds, dim, new FacetSearchParams(fsp.indexingParams, requests));
-      if (drillSidewaysAccumulators[idx++] instanceof StandardFacetsAccumulator) {
+      m = getMethod("org.apache.lucene.facet.search.DrillSideways", "getDrillSidewaysAccumulator", String.class, FacetSearchParams.class);
+      drillSidewaysAccumulators[idx] = (FacetsAccumulator) invoke(m, ds, dim, new FacetSearchParams(fsp.indexingParams, requests));
+      if (drillSidewaysAccumulators[idx] instanceof StandardFacetsAccumulator) {
         throw new IllegalArgumentException("accumulator must not be StandardFacetsAccumulator");
       }
+
+      idx++;
     }
 
-    m = getMethod("org.apache.lucene.facet.search.DrillSideways", "getDrillDownAccumulator");
+    m = getMethod("org.apache.lucene.facet.search.DrillSideways", "getDrillDownAccumulator", FacetSearchParams.class);
     FacetsAccumulator drillDownAccumulator = fsp2 == null ? null : (FacetsAccumulator) invoke(m, ds, fsp2);
     if (drillDownAccumulator != null && (drillDownAccumulator instanceof StandardFacetsAccumulator)) {
       throw new IllegalArgumentException("accumulator must not be StandardFacetsAccumulator");
@@ -403,6 +405,7 @@ public class NativeSearch {
 
     List<FacetResult> mergedResults = new ArrayList<FacetResult>();
     int[] requestUpto = new int[drillDownDims.size()];
+    int ddUpto = 0;
     for(int i=0;i<fsp.facetRequests.size();i++) {
       FacetRequest fr = fsp.facetRequests.get(i);
       assert fr.categoryPath.length > 0;
@@ -413,14 +416,13 @@ public class NativeSearch {
         if (drillDownResults == null) {
           // Lazy init, in case all requests were against
           // drill-sideways dims:
-
           List<MatchingDocs> matchingDocs = new ArrayList<MatchingDocs>();
           for(DrillSidewaysState dsState : rawResult.dsRawResults) {
             matchingDocs.add(new MatchingDocs(dsState.ctx, dsState.ddBits, dsState.totalHits[0], null));
           }
           drillDownResults = drillDownAccumulator.accumulate(matchingDocs);
         }
-        mergedResults.add(drillDownResults.get(i));
+        mergedResults.add(drillDownResults.get(ddUpto++));
       } else {
         // Drill sideways dim:
         int dim = dimIndex.intValue();
@@ -495,12 +497,12 @@ public class NativeSearch {
               if (docFreqs[numValidTerms] > 1) {
                 singletonDocIDs[numValidTerms] = -1;
                 docTermStartFPs[i] = getLongField(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "docTermStartFP");
+                if (address == 0) {
+                  IndexInput docIn = (IndexInput) getFieldObject(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "docIn");
+                  address = getMMapAddress(unwrap(docIn));
+                }
               } else {
                 singletonDocIDs[numValidTerms] = getIntField(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "singletonDocID");
-              }
-              if (address == 0) {
-                IndexInput docIn = (IndexInput) getFieldObject(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "docIn");
-                address = getMMapAddress(unwrap(docIn));
               }
               numValidTerms++;
             }
@@ -900,10 +902,10 @@ public class NativeSearch {
     }
   }
 
-  private static Method getMethod(String className, String methodName) {
+  private static Method getMethod(String className, String methodName, Class<?>... params) {
     try {
       Class<?> x = Class.forName(className);
-      Method f = x.getDeclaredMethod(methodName);
+      Method f = x.getDeclaredMethod(methodName, params);
       f.setAccessible(true);
       return f;
     } catch (Exception e) {

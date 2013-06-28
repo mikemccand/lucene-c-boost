@@ -206,6 +206,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
   unsigned long *dsHitBits = 0;
   unsigned long **dsNearMissBits = 0;
   unsigned long *dsDocTermStartFPs = 0;
+  unsigned int *dsDocFreqs = 0;
   int *dsSingletonDocIDs = 0;
   unsigned int *dsTotalHits = 0;
 
@@ -215,7 +216,12 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
       failed = true;
       goto end;
     }
-    dsMissingDims = (unsigned int *) malloc(CHUNK * sizeof(int));
+    // Must be 1-filled:
+    for(int i=0;i<CHUNK;i++) {
+      dsCounts[i] = 1;
+    }
+    // Must be zero-filled:
+    dsMissingDims = (unsigned int *) calloc(CHUNK, sizeof(int));
     if (dsMissingDims == 0) {
       failed = true;
       goto end;
@@ -249,8 +255,8 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
       }
     }
 
-    dsSubs = (PostingsState *) calloc(numScorers, sizeof(PostingsState));
-    if (dsSubs == 0) {
+    dsDocFreqs = (unsigned int *) env->GetIntArrayElements(jdsDocFreqs, 0);
+    if (dsDocFreqs == 0) {
       failed = true;
       goto end;
     }
@@ -267,8 +273,14 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
       goto end;
     }
 
+    dsSubs = (PostingsState *) calloc(dsNumDims, sizeof(PostingsState));
+    if (dsSubs == 0) {
+      failed = true;
+      goto end;
+    }
+
     for(int i=0;i<dsNumDims;i++) {
-      if (!initSub(i, subs+i, true, dsSingletonDocIDs[i], 1, docFreqs[i], true, docFileAddress, dsDocTermStartFPs[i])) {
+      if (!initSub(i, dsSubs+i, true, dsSingletonDocIDs[i], 1, dsDocFreqs[i], true, dsDocFileAddress, dsDocTermStartFPs[i])) {
         failed = true;
         goto end;
       }
@@ -551,7 +563,10 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
       }
     }
 
-    free(subs);
+    free(dsSubs);
+  }
+  if (dsDocFreqs != 0) {
+    env->ReleaseIntArrayElements(jdsDocFreqs, (int *) dsDocFreqs, JNI_ABORT);
   }
   if (dsDocTermStartFPs != 0) {
     env->ReleaseLongArrayElements(jdsDocTermStartFPs, (long *) dsDocTermStartFPs, JNI_ABORT);

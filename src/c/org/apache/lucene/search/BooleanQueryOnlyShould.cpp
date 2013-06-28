@@ -391,7 +391,7 @@ int booleanQueryOnlyShould(PostingsState* subs,
   int hitCount = 0;
   while (docUpto < maxDoc) {
     int endDoc = docUpto + CHUNK;
-    //printf("cycle endDoc=%d dels=%lx\n", endDoc, liveDocBytes);fflush(stdout);
+    printf("cycle endDoc=%d\n", endDoc);fflush(stdout);
 
     int numFilled = 0;
 
@@ -411,29 +411,29 @@ int booleanQueryOnlyShould(PostingsState* subs,
       }
     }
 
-    hitCount += numFilled;
-
     int docChunkBase = docBase + docUpto;
+    printf("chukn dsNumDims=%d\n", dsNumDims);fflush(stdout);
 
     if (dsNumDims > 0) {
-      drillSidewaysCollect(topN,
-                           docBase,
-                           topDocIDs,
-                           topScores,
-                           filled,
-                           numFilled,
-                           docIDs,
-                           scores,
-                           dsCounts,
-                           dsMissingDims,
-                           docUpto,
-                           dsSubs,
-                           dsNumDims,
-                           dsTermsPerDim,
-                           dsTotalHits,
-                           dsHitBits,
-                           dsNearMissBits);
+      hitCount += drillSidewaysCollect(topN,
+                                       docBase,
+                                       topDocIDs,
+                                       topScores,
+                                       filled,
+                                       numFilled,
+                                       docIDs,
+                                       scores,
+                                       dsCounts,
+                                       dsMissingDims,
+                                       docUpto,
+                                       dsSubs,
+                                       dsNumDims,
+                                       dsTermsPerDim,
+                                       dsTotalHits,
+                                       dsHitBits,
+                                       dsNearMissBits);
     } else if (topScores == 0) {
+      hitCount += numFilled;
       for(int i=0;i<numFilled;i++) {
         int slot = filled[i];
         int docID = docChunkBase + slot;
@@ -447,6 +447,7 @@ int booleanQueryOnlyShould(PostingsState* subs,
         }
       }
     } else {
+      hitCount += numFilled;
 
       // Collect:
       //printf("collect:\n");
@@ -468,9 +469,12 @@ int booleanQueryOnlyShould(PostingsState* subs,
         }
       }
     }
+    printf("done chukn dsNumDims=%d\n", dsNumDims);fflush(stdout);
 
     docUpto += CHUNK;
   }
+
+  printf("done\n");
 
   return hitCount;
 }

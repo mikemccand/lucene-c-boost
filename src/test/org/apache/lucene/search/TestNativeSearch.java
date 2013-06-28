@@ -19,6 +19,8 @@ package org.apache.lucene.search;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.codecs.Codec;
@@ -28,6 +30,16 @@ import org.apache.lucene.document.FieldType;
 import org.apache.lucene.document.IntField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
+import org.apache.lucene.facet.index.FacetFields;
+import org.apache.lucene.facet.params.FacetSearchParams;
+import org.apache.lucene.facet.search.CountFacetRequest;
+import org.apache.lucene.facet.search.DrillDownQuery;
+import org.apache.lucene.facet.search.DrillSideways.DrillSidewaysResult;
+import org.apache.lucene.facet.search.DrillSideways;
+import org.apache.lucene.facet.taxonomy.CategoryPath;
+import org.apache.lucene.facet.taxonomy.TaxonomyReader;
+import org.apache.lucene.facet.taxonomy.directory.DirectoryTaxonomyReader;
+import org.apache.lucene.facet.taxonomy.directory.DirectoryTaxonomyWriter;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.IndexReader;
@@ -944,5 +956,60 @@ public class TestNativeSearch extends LuceneTestCase {
 
     r.close();
     dir.close();
+  }
+
+  private void add(FacetFields facetFields, Document doc, String ... categoryPaths) throws IOException {
+    List<CategoryPath> paths = new ArrayList<CategoryPath>();
+    for(String categoryPath : categoryPaths) {
+      paths.add(new CategoryPath(categoryPath, '/'));
+    }
+    facetFields.addFields(doc, paths);
+  }
+
+  public void testDrillSideways() throws Exception {
+    File tmpDir = _TestUtil.getTempDir("nativesearch");
+    Directory dir = new NativeMMapDirectory(tmpDir);
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setCodec(Codec.forName("Lucene42"));
+    IndexWriter w = new IndexWriter(dir, iwc);
+
+    Directory taxoDir = newDirectory();
+    DirectoryTaxonomyWriter taxoWriter = new DirectoryTaxonomyWriter(taxoDir, IndexWriterConfig.OpenMode.CREATE);
+
+    FacetFields facetFields = new FacetFields(taxoWriter);
+
+    Document doc = new Document();
+    doc.add(new TextField("field", "x", Field.Store.NO));
+    add(facetFields, doc, "vendor/Intel", "speed/Fast");
+    w.addDocument(doc);
+    doc = new Document();
+    doc.add(new TextField("field", "x", Field.Store.NO));
+    add(facetFields, doc, "vendor/AMD", "speed/Slow");
+    w.addDocument(doc);
+
+    IndexReader r = DirectoryReader.open(w, true);
+    w.close();
+
+    TaxonomyReader taxoReader = new DirectoryTaxonomyReader(taxoWriter);
+    taxoWriter.close();
+
+    IndexSearcher s = new IndexSearcher(r);
+
+    FacetSearchParams fsp = new FacetSearchParams(
+                                new CountFacetRequest(new CategoryPath("vendor"), 10),
+                                new CountFacetRequest(new CategoryPath("speed"), 10));
+
+    DrillSideways ds = new DrillSideways(s, taxoReader);
+    BooleanQuery bq = new BooleanQuery();
+    bq.add(new TermQuery(new Term("field", "x")), BooleanClause.Occur.SHOULD);
+    bq.add(new TermQuery(new Term("field", "x")), BooleanClause.Occur.SHOULD);
+    DrillDownQuery ddq = new DrillDownQuery(fsp.indexingParams, bq);
+    ddq.add(new CategoryPath("vendor", "Intel"));
+    DrillSidewaysResult dsResult = NativeSearch.drillSidewaysSearchNative(ds, ddq, 10, fsp);
+    System.out.println("got result=" + dsResult);
+    taxoReader.close();
+    r.close();
+    dir.close();
+    taxoDir.close();
   }
 }
