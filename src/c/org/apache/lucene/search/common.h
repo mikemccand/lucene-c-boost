@@ -146,7 +146,15 @@ int booleanQueryShouldMust(PostingsState* subs,
                            int *topDocIDs,
                            float *coordFactors,
                            float *normTable,
-                           unsigned char *norms);
+                           unsigned char *norms,
+                           PostingsState *dsSubs,
+                           unsigned int *dsCounts,
+                           unsigned int *dsMissingDims,
+                           unsigned int dsNumDims,
+                           unsigned int *dsTotalHits,
+                           unsigned int *dsTermsPerDim,
+                           unsigned long *dsHitBits,
+                           unsigned long **dsNearMissBits);
 
 int booleanQueryShouldMustMustNot(PostingsState* subs,
                                   unsigned char *liveDocsBytes,

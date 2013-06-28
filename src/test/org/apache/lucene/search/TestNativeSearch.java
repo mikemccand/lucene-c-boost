@@ -1079,6 +1079,15 @@ public class TestNativeSearch extends LuceneTestCase {
     assertEquals("vendor (0)\n  Intel (1)\n", toSimpleString(dsResult.facetResults.get(0)));
     assertEquals("speed (0)\n  Fast (1)\n", toSimpleString(dsResult.facetResults.get(1)));
 
+    // SHOULD + MUST
+    //System.out.println("TEST: should + must_not");
+    bq = new BooleanQuery();
+    bq.add(new TermQuery(new Term("field", "x")), BooleanClause.Occur.SHOULD);
+    bq.add(new TermQuery(new Term("field", "y")), BooleanClause.Occur.MUST);
+    ddq = new DrillDownQuery(fsp.indexingParams, bq);
+    ddq.add(new CategoryPath("vendor", "AMD"));
+    assertSameHits(ds, ddq, fsp);
+
     taxoReader.close();
     r.close();
     dir.close();
