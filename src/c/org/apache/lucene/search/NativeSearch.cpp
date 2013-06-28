@@ -462,7 +462,7 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
     hitCount = booleanQueryShouldMustMustNot(subs, liveDocsBytes, termScoreCache, termWeights,
                                              maxDoc, topN, numScorers, docBase, numMust, numMustNot, filled, docIDs, scores, coords,
                                              topScores, topDocIDs, coordFactors, normTable,
-                                             norms);
+                                             norms, dsSubs, dsCounts, dsMissingDims, dsNumDims, dsTotalHits, dsTermsPerDim, dsHitBits, dsNearMissBits);
   }
 
  end:

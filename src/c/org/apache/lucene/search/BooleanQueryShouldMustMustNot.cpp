@@ -304,7 +304,7 @@ orMustChunk(PostingsState *sub,
       //printf("  docID=%d\n", nextDocID);
       int slot = nextDocID & MASK;
 
-      if (docIDs[slot] == nextDocID) {
+      if (docIDs[slot] == nextDocID && coords[slot] == prevMustClauseCount) {
         coords[slot]++;
         filled[numFilled++] = slot;
       }
@@ -381,8 +381,16 @@ int booleanQueryShouldMustMustNot(PostingsState* subs,
                                   int *topDocIDs,
                                   float *coordFactors,
                                   float *normTable,
-                                  unsigned char *norms) {
-
+                                  unsigned char *norms,
+                                  PostingsState *dsSubs,
+                                  unsigned int *dsCounts,
+                                  unsigned int *dsMissingDims,
+                                  unsigned int dsNumDims,
+                                  unsigned int *dsTotalHits,
+                                  unsigned int *dsTermsPerDim,
+                                  unsigned long *dsHitBits,
+                                  unsigned long **dsNearMissBits)
+{
   int docUpto = 0;
   int hitCount = 0;
 
@@ -414,16 +422,34 @@ int booleanQueryShouldMustMustNot(PostingsState* subs,
       }
     }
 
-    hitCount += numFilled;
-
     int docChunkBase = docBase + docUpto;
 
-    if (topScores == 0) {
+    if (dsNumDims > 0) {
+      hitCount += drillSidewaysCollect(topN,
+                                       docBase,
+                                       topDocIDs,
+                                       topScores,
+                                       normTable,
+                                       norms,
+                                       coordFactors,
+                                       coords,
+                                       filled,
+                                       numFilled,
+                                       docIDs,
+                                       scores,
+                                       dsCounts,
+                                       dsMissingDims,
+                                       docUpto,
+                                       dsSubs,
+                                       dsNumDims,
+                                       dsTermsPerDim,
+                                       dsTotalHits,
+                                       dsHitBits,
+                                       dsNearMissBits);
+    } else if (topScores == 0) {
+      hitCount += numFilled;
       for(int i=0;i<numFilled;i++) {
         int slot = filled[i];
-        if (coords[slot] < numMust) {
-          continue;
-        }
         int docID = docChunkBase + slot;
         // TODO: we can stop collecting, and tracking filled,
         // after chunk once queue is full
@@ -435,14 +461,12 @@ int booleanQueryShouldMustMustNot(PostingsState* subs,
         }
       }
     } else {
+      hitCount += numFilled;
 
       // Collect:
       //printf("collect:\n");
       for(int i=0;i<numFilled;i++) {
         int slot = filled[i];
-        if (coords[slot] < numMust) {
-          continue;
-        }
         float score = scores[slot] * coordFactors[coords[slot]] * normTable[norms[docIDs[slot]]];
         int docID = docChunkBase + slot;
         //printf("  docBase=%d doc=%d score=%.5f coord=%d cf=%.5f\n",
