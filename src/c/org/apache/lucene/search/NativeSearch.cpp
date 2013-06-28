@@ -231,6 +231,10 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
       failed = true;
       goto end;
     }
+    int dsNumTerms = 0;
+    for(int i=0;i<dsNumDims;i++) {
+      dsNumTerms += dsTermsPerDim[i];
+    }
     dsTotalHits = (unsigned int *) env->GetIntArrayElements(jdsTotalHits, 0);
     if (dsTotalHits == 0) {
       failed = true;
@@ -273,13 +277,14 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentBooleanQuery
       goto end;
     }
 
-    dsSubs = (PostingsState *) calloc(dsNumDims, sizeof(PostingsState));
+    dsSubs = (PostingsState *) calloc(dsNumTerms, sizeof(PostingsState));
     if (dsSubs == 0) {
       failed = true;
       goto end;
     }
 
-    for(int i=0;i<dsNumDims;i++) {
+    for(int i=0;i<dsNumTerms;i++) {
+      //printf("ds init sub %d: dF=%d start=%ld\n", i, dsDocFreqs[i], dsDocTermStartFPs[i]);
       if (!initSub(i, dsSubs+i, true, dsSingletonDocIDs[i], 1, dsDocFreqs[i], true, dsDocFileAddress, dsDocTermStartFPs[i])) {
         failed = true;
         goto end;

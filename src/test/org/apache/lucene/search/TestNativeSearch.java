@@ -36,6 +36,8 @@ import org.apache.lucene.facet.search.CountFacetRequest;
 import org.apache.lucene.facet.search.DrillDownQuery;
 import org.apache.lucene.facet.search.DrillSideways.DrillSidewaysResult;
 import org.apache.lucene.facet.search.DrillSideways;
+import org.apache.lucene.facet.search.FacetResult;
+import org.apache.lucene.facet.search.FacetResultNode;
 import org.apache.lucene.facet.taxonomy.CategoryPath;
 import org.apache.lucene.facet.taxonomy.TaxonomyReader;
 import org.apache.lucene.facet.taxonomy.directory.DirectoryTaxonomyReader;
@@ -108,6 +110,19 @@ public class TestNativeSearch extends LuceneTestCase {
       expected = s.search(csq, maxDoc);
       actual = NativeSearch.searchNative(s, csq, maxDoc);
       assertSameHits(expected, actual);
+    }
+  }
+
+  private void assertSameHits(DrillSideways ds, DrillDownQuery q, FacetSearchParams fsp) throws IOException {
+    DrillSidewaysResult expected = ds.search(null, q, 10, fsp);
+    DrillSidewaysResult actual = NativeSearch.drillSidewaysSearchNative(ds, q, 10, fsp);
+
+    assertSameHits(expected.hits, actual.hits);
+    assertEquals(expected.facetResults.size(), actual.facetResults.size());
+    for(int i=0;i<expected.facetResults.size();i++) {
+      FacetResult frExpected = expected.facetResults.get(i);
+      FacetResult frActual = actual.facetResults.get(i);
+      assertEquals(toSimpleString(frExpected), toSimpleString(frActual));
     }
   }
 
@@ -1003,13 +1018,67 @@ public class TestNativeSearch extends LuceneTestCase {
     BooleanQuery bq = new BooleanQuery();
     bq.add(new TermQuery(new Term("field", "x")), BooleanClause.Occur.SHOULD);
     bq.add(new TermQuery(new Term("field", "x")), BooleanClause.Occur.SHOULD);
-    DrillDownQuery ddq = new DrillDownQuery(fsp.indexingParams, bq);
+
+    DrillDownQuery ddq;
+    DrillSidewaysResult dsResult;
+
+    ddq = new DrillDownQuery(fsp.indexingParams, bq);
     ddq.add(new CategoryPath("vendor", "Intel"));
-    DrillSidewaysResult dsResult = NativeSearch.drillSidewaysSearchNative(ds, ddq, 10, fsp);
-    System.out.println("got result=" + dsResult);
+    dsResult = NativeSearch.drillSidewaysSearchNative(ds, ddq, 10, fsp);
+    assertEquals(1, dsResult.hits.totalHits);
+    assertEquals(0, dsResult.hits.scoreDocs[0].doc);
+    assertEquals(2, dsResult.facetResults.size());
+    assertEquals("vendor (0)\n  AMD (1)\n  Intel (1)\n", toSimpleString(dsResult.facetResults.get(0)));
+    assertEquals("speed (0)\n  Fast (1)\n", toSimpleString(dsResult.facetResults.get(1)));
+
+    assertSameHits(ds, ddq, fsp);
+
+    // Multi-select:
+    //System.out.println("now test multiselect");
+    ddq = new DrillDownQuery(fsp.indexingParams, bq);
+    ddq.add(new CategoryPath("vendor", "Intel"), new CategoryPath("vendor", "AMD"));
+    //System.out.println("ddq: " + ddq);
+    assertSameHits(ds, ddq, fsp);
+
+    dsResult = NativeSearch.drillSidewaysSearchNative(ds, ddq, 10, fsp);
+    assertEquals(2, dsResult.hits.totalHits);
+    assertEquals(0, dsResult.hits.scoreDocs[0].doc);
+    assertEquals(2, dsResult.facetResults.size());
+    assertEquals("vendor (0)\n  AMD (1)\n  Intel (1)\n", toSimpleString(dsResult.facetResults.get(0)));
+    assertEquals("speed (0)\n  Slow (1)\n  Fast (1)\n", toSimpleString(dsResult.facetResults.get(1)));
+
+    // Two drill-downs:
+    //System.out.println("\nTEST: now test double drilldown");
+    ddq = new DrillDownQuery(fsp.indexingParams, bq);
+    ddq.add(new CategoryPath("vendor", "Intel"));
+    ddq.add(new CategoryPath("speed", "Fast"));
+    //System.out.println("ddq: " + ddq);
+    assertSameHits(ds, ddq, fsp);
+
+    dsResult = NativeSearch.drillSidewaysSearchNative(ds, ddq, 10, fsp);
+    assertEquals(1, dsResult.hits.totalHits);
+    assertEquals(0, dsResult.hits.scoreDocs[0].doc);
+    assertEquals(2, dsResult.facetResults.size());
+    assertEquals("vendor (0)\n  Intel (1)\n", toSimpleString(dsResult.facetResults.get(0)));
+    assertEquals("speed (0)\n  Fast (1)\n", toSimpleString(dsResult.facetResults.get(1)));
+
     taxoReader.close();
     r.close();
     dir.close();
     taxoDir.close();
+  }
+
+  // Poached from FacetTestUtils.java:
+  private static String toSimpleString(FacetResult fr) {
+    StringBuilder sb = new StringBuilder();
+    toSimpleString(fr.getFacetRequest().categoryPath.length, 0, sb, fr.getFacetResultNode(), "");
+    return sb.toString();
+  }
+  
+  private static void toSimpleString(int startLength, int depth, StringBuilder sb, FacetResultNode node, String indent) {
+    sb.append(indent + node.label.components[startLength+depth-1] + " (" + (int) node.value + ")\n");
+    for (FacetResultNode childNode : node.subResults) {
+      toSimpleString(startLength, depth + 1, sb, childNode, indent + "  ");
+    }
   }
 }

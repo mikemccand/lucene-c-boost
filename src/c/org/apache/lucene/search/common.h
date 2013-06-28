@@ -180,6 +180,8 @@ unsigned int drillSidewaysCollect(unsigned int topN,
                                   unsigned int docBase,
                                   int *topDocIDs,
                                   float *topScores,
+                                  float *normTable,
+                                  unsigned char *norms,
                                   unsigned int *filled,
                                   int numFilled,
                                   int *docIDs,
@@ -200,8 +202,7 @@ void setLongBit(unsigned long *bits, unsigned int docID);
 //#define DEBUG
 
 #ifndef DEBUG
-// nocommit put back
-//#define printf NO
-//#define fflush NO
+#define printf NO
+#define fflush NO
 #endif
 

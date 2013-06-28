@@ -25,6 +25,8 @@ unsigned int drillSidewaysCollect(unsigned int topN,
                                   unsigned int docBase,
                                   int *topDocIDs,
                                   float *topScores,
+                                  float *normTable,
+                                  unsigned char *norms,
                                   unsigned int *filled,
                                   int numFilled,
                                   int *docIDs,
@@ -46,7 +48,7 @@ unsigned int drillSidewaysCollect(unsigned int topN,
   // if drill downs are very restrictive...
   unsigned int endDoc = docUpto + CHUNK;
 
-  printf("DS 0 count %d\n", termsPerDim[0]);fflush(stdout);
+  //printf("DS collect numFilled=%d termsPerDim[0]=%d\n", numFilled, termsPerDim[0]);fflush(stdout);
 
   // First drill-down dim, basically adds SHOULD onto
   // the baseQuery:
@@ -56,20 +58,21 @@ unsigned int drillSidewaysCollect(unsigned int topN,
     int blockLastRead = sub->docFreqBlockLastRead;
     int blockEnd = sub->docFreqBlockEnd;
     unsigned int *docDeltas = sub->docDeltas;      
-    printf("  nextDoc %d vs end %d\n", nextDocID, endDoc);fflush(stdout);
+    //printf("  i=%d: nextDoc %d vs end %d\n", i, nextDocID, endDoc);fflush(stdout);
 
     while (nextDocID < endDoc) {
       int slot = nextDocID & MASK;
+      //printf("    cycle docID=%d\n", nextDocID);
       if (docIDs[slot] == nextDocID) {
-        printf("fileld\n");fflush(stdout);
+        //printf("fileld\n");fflush(stdout);
         missingDims[slot] = 1;
         counts[slot] = 2;
       }
       // Inlined nextDoc:
       if (blockLastRead == blockEnd) {
-        printf("end block\n");fflush(stdout);
+        //printf("end block\n");fflush(stdout);
         if (sub->docsLeft == 0) {
-          printf("break\n");fflush(stdout);
+          //printf("break\n");fflush(stdout);
           nextDocID = NO_MORE_DOCS;
           break;
         } else {
@@ -85,7 +88,7 @@ unsigned int drillSidewaysCollect(unsigned int topN,
     sub->docFreqBlockLastRead = blockLastRead;
   }
 
-  printf("other dims\n");fflush(stdout);
+  //printf("other dims\n");fflush(stdout);
 
   // Other dims:
   for(int dim=1;dim<numDims;dim++) {
@@ -136,18 +139,18 @@ unsigned int drillSidewaysCollect(unsigned int topN,
     }
   }
 
-  printf("now collect %d\n", numFilled);fflush(stdout);
+  //printf("now collect %d\n", numFilled);fflush(stdout);
 
   // Collect:
   int docChunkBase = docBase + docUpto;
   for(int i=0;i<numFilled;i++) {
     unsigned int slot = filled[i];
-    printf("  slot: %d\n", slot);fflush(stdout);
+    //printf("  slot: %d\n", slot);fflush(stdout);
     unsigned int docID = docUpto + slot;
     unsigned int topDocID = docChunkBase + slot;
     if (counts[slot] == 1+numDims) {
       hitCount++;
-      printf("  hit: %d\n", docID);fflush(stdout);
+      //printf("  hit: %d\n", docID);fflush(stdout);
       // A real hit
       setLongBit(hitBits, docID);
       for(int j=0;j<numDims;j++) {
@@ -155,7 +158,7 @@ unsigned int drillSidewaysCollect(unsigned int topN,
       }
       (*(totalHits))++;
       if (scores != 0) {
-        float score = scores[slot];
+        float score = scores[slot] * normTable[norms[docID]];
         if (score > topScores[1] || (score == topScores[1] && topDocID < topDocIDs[1])) {
           // Hit is competitive   
           topDocIDs[1] = topDocID;
@@ -173,14 +176,13 @@ unsigned int drillSidewaysCollect(unsigned int topN,
           downHeapNoScores(topN, topDocIDs);
         }
       }
-      printf("  done collect\n");fflush(stdout);
     } else if (counts[slot] == numDims) {
-      printf("  miss: %d\n", docID);fflush(stdout);
+      //printf("  miss: %d\n", docID);fflush(stdout);
       unsigned int dim = missingDims[slot];
       (*(totalHits+dim+1))++;
       setLongBit(nearMissBits[dim], docID);
     } else {
-      printf("  nothing: %d vs %d\n", counts[slot], numDims);fflush(stdout);
+      //printf("  nothing: %d vs %d\n", counts[slot], numDims);fflush(stdout);
     }
     counts[slot] = 1;
     missingDims[slot] = 0;

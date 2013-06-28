@@ -118,7 +118,8 @@ if True:
 
   run('javac -d build/classes/test -cp %s:dist/luceneCBoost-SNAPSHOT.jar src/test/org/apache/lucene/search/*.java' % toClassPath(DEPS + TEST_DEPS))
 
-if True:
+# nocommit
+if False:
   print('\nRun tests')
   if not os.path.exists('build/test'):
     os.makedirs('build/test')

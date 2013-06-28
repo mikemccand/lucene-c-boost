@@ -391,7 +391,7 @@ int booleanQueryOnlyShould(PostingsState* subs,
   int hitCount = 0;
   while (docUpto < maxDoc) {
     int endDoc = docUpto + CHUNK;
-    printf("cycle endDoc=%d\n", endDoc);fflush(stdout);
+    //printf("cycle endDoc=%d\n", endDoc);fflush(stdout);
 
     int numFilled = 0;
 
@@ -412,13 +412,15 @@ int booleanQueryOnlyShould(PostingsState* subs,
     }
 
     int docChunkBase = docBase + docUpto;
-    printf("chukn dsNumDims=%d\n", dsNumDims);fflush(stdout);
+    //printf("chukn dsNumDims=%d\n", dsNumDims);fflush(stdout);
 
     if (dsNumDims > 0) {
       hitCount += drillSidewaysCollect(topN,
                                        docBase,
                                        topDocIDs,
                                        topScores,
+                                       normTable,
+                                       norms,
                                        filled,
                                        numFilled,
                                        docIDs,
@@ -469,12 +471,12 @@ int booleanQueryOnlyShould(PostingsState* subs,
         }
       }
     }
-    printf("done chukn dsNumDims=%d\n", dsNumDims);fflush(stdout);
+    //printf("done chukn dsNumDims=%d\n", dsNumDims);fflush(stdout);
 
     docUpto += CHUNK;
   }
 
-  printf("done\n");
+  //printf("done\n");
 
   return hitCount;
 }

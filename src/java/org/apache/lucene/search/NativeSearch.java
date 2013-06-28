@@ -341,6 +341,7 @@ public class NativeSearch {
         BooleanQuery q2 = (BooleanQuery) q;
         BooleanClause[] clauses2 = q2.getClauses();
         termsPerDim[i-1] = clauses2.length;
+        //System.out.println("java: tpd[" + (i-1) + "]=" + termsPerDim[i-1]);
         for(int j=0;j<clauses2.length;j++) {
           if (clauses2[j].getQuery() instanceof TermQuery) {
             Term ddTerm = ((TermQuery) clauses2[j].getQuery()).getTerm();
@@ -470,7 +471,7 @@ public class NativeSearch {
         return;
       }
       ctx = state.ctx;
-      this.termsPerDim = dsTermsPerDim;
+      termsPerDim = new int[dsNumDims];
       docFreqs = new int[dsTerms.size()];
       singletonDocIDs = new int[dsTerms.size()];
       totalTermFreqs = new long[dsTerms.size()];
@@ -483,12 +484,14 @@ public class NativeSearch {
       }
       TermsEnum termsEnum = terms.iterator(null);
       int termUpto = 0;
-      int lastNumValidTerms = 0;
       long address = 0;
+      int lastNumValidTerms = 0;
+      int numValidTerms = 0;
       for(int i=0;i<dsNumDims;i++) {
-        int numValidTerms = 0;
+        //System.out.println("dim=" + i + " termsPerDim=" + dsTermsPerDim[i]);
         for(int j=0;j<dsTermsPerDim[i];j++) {
           BytesRef term = dsTerms.get(termUpto++);
+          //System.out.println("  term=" + term);
           if (termsEnum.seekExact(term, false)) {
             DocsEnum docsEnum = termsEnum.docs(null, null, 0);
             if (docsEnum != null) {
@@ -496,7 +499,7 @@ public class NativeSearch {
               totalTermFreqs[numValidTerms] = getLongField(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "totalTermFreq");
               if (docFreqs[numValidTerms] > 1) {
                 singletonDocIDs[numValidTerms] = -1;
-                docTermStartFPs[i] = getLongField(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "docTermStartFP");
+                docTermStartFPs[numValidTerms] = getLongField(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "docTermStartFP");
                 if (address == 0) {
                   IndexInput docIn = (IndexInput) getFieldObject(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "docIn");
                   address = getMMapAddress(unwrap(docIn));
@@ -504,12 +507,18 @@ public class NativeSearch {
               } else {
                 singletonDocIDs[numValidTerms] = getIntField(docsEnum, "org.apache.lucene.codecs.lucene41.Lucene41PostingsReader$BlockDocsEnum", "singletonDocID");
               }
+              //System.out.println("dF[" + numValidTerms + "]=" + docFreqs[numValidTerms] + "; startFP=" + docTermStartFPs[i]);
               numValidTerms++;
+            } else {
+              //System.out.println("no docs match " + term);
             }
+          } else {
+            //System.out.println("no term match " + term);
           }
-          dsTermsPerDim[i] = numValidTerms - lastNumValidTerms;
-          lastNumValidTerms = numValidTerms;
         }
+        termsPerDim[i] = numValidTerms - lastNumValidTerms;
+        lastNumValidTerms = numValidTerms;
+        //System.out.println("i=" + i + " cout=" + termsPerDim[i]);
       }
       this.address = address;
       ddBits = new FixedBitSet(state.maxDoc);
@@ -1456,6 +1465,7 @@ public class NativeSearch {
         */
         
         //System.out.println("  seg=" + state.reader.getSegmentName() + " docFreqs=" + Arrays.toString(docFreqs) + " numMustNot=" + numMustNot + " numMust=" + numMust + " docBase=" + ctx.docBase + " coord=" + Arrays.toString(coordFactors));
+        //System.out.println("send startFPs=" + Arrays.toString(dsState.docTermStartFPs));
         totalHits += searchSegmentBooleanQuery(topDocIDs,
                                                topScores,
                                                state.maxDoc,
