@@ -44,7 +44,9 @@ If the provided query matches then the optimized C++ code is used. Otherwise the
 <br>
 #Installation
 <p>
-Run python build.py then put dist/*.so on your dynamic library path, and dist/luceneCBoost-SNAPSHOT.jar on your CLASSPATH.
+If you're using Java 1.7 on Linux, just grab the binaries from dist/*.
+
+Otherewise, run python build.py then put dist/*.so on your dynamic library path, and dist/luceneCBoost-SNAPSHOT.jar on your CLASSPATH.
 
 <br>
 #Limitations

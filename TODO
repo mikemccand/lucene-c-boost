@@ -8,7 +8,7 @@ DS
 
 handle BQ over DOCS_ONLY?
 
-hmm queries that are expensive to rewrite but then native boost doesn't apply, are slower!!
+hmm queries that are expensive to rewrite but then native boost doesn't apply, are slower!!  do more up-front checks?
 
 can we be agnostic to 4.3 vs 4.4?
 
