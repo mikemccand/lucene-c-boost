@@ -159,7 +159,12 @@ unsigned int drillSidewaysCollect(unsigned int topN,
       }
       (*(totalHits))++;
       if (scores != 0) {
-        float score = scores[slot] * normTable[norms[docID]] * coordFactors[coords[slot]];
+        float score;
+        if (coordFactors != 0) {
+          score = scores[slot] * normTable[norms[docID]] * coordFactors[coords[slot]];
+        } else {
+          score = scores[slot] * normTable[norms[docID]];
+        }
         if (score > topScores[1] || (score == topScores[1] && topDocID < topDocIDs[1])) {
           // Hit is competitive   
           topDocIDs[1] = topDocID;

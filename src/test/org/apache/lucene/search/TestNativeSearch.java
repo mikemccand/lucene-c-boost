@@ -1098,6 +1098,12 @@ public class TestNativeSearch extends LuceneTestCase {
     ddq.add(new CategoryPath("vendor", "AMD"));
     assertSameHits(ds, ddq, fsp);
 
+    // TermQuery
+    Query tq = new TermQuery(new Term("field", "x"));
+    ddq = new DrillDownQuery(fsp.indexingParams, tq);
+    ddq.add(new CategoryPath("vendor", "AMD"));
+    assertSameHits(ds, ddq, fsp);
+
     taxoReader.close();
     r.close();
     dir.close();

@@ -241,7 +241,25 @@ public class NativeSearch {
       long docTermStartFP,
 
       // Address in memory where .doc file is mapped:
-      long docFileAddress);
+      long docFileAddress,
+
+      int dsNumDims,
+
+      int[] dsTotalHits,
+
+      int[] dsTermsPerDim,
+
+      long[] dsHitBits,
+
+      long[][] dsNearMissBits,
+
+      int[] dsSingletonDocIDs,
+
+      int[] dsDocFreqs,
+
+      long[] dsDocTermStartFPs,
+
+      long dsDocFileAddress);
 
   private static native void fillMultiTermFilter(
       long[] bits,
@@ -666,7 +684,7 @@ public class NativeSearch {
     // System.out.println("NATIVE: search " + query);
 
     if (query instanceof TermQuery) {
-      return _searchTermQuery(searcher, (TermQuery) query, topN, constantScore);
+      return _searchTermQuery(searcher, (TermQuery) query, topN, constantScore, dsNumDims, dsTermsPerDim, dsField, dsTerms);
     } else if (query instanceof PhraseQuery) {
       return _searchPhraseQuery(searcher, (PhraseQuery) query, topN, constantScore);
     } else if (query instanceof BooleanQuery) {
@@ -977,7 +995,8 @@ public class NativeSearch {
     }
   }
 
-  private static SearchResult _searchTermQuery(IndexSearcher searcher, TermQuery query, int topN, float constantScore) throws IOException {
+  private static SearchResult _searchTermQuery(IndexSearcher searcher, TermQuery query, int topN, float constantScore,
+                                               int dsNumDims, int[] dsTermsPerDim, String dsField, List<BytesRef> dsTerms) throws IOException {
 
     List<AtomicReaderContext> leaves = searcher.getIndexReader().leaves();
     //System.out.println("_searchTermQuery: " + leaves.size() + " segments; query=" + query);
@@ -1008,6 +1027,8 @@ public class NativeSearch {
     int totalHits = 0;
 
     float[] normTable = getNormTable();
+
+    List<DrillSidewaysState> dsStates = new ArrayList<DrillSidewaysState>();
 
     for(int readerIDX=0;readerIDX<leaves.size();readerIDX++) {
       AtomicReaderContext ctx = leaves.get(readerIDX);
@@ -1051,6 +1072,10 @@ public class NativeSearch {
           assert singletonDocID >= 0;
           assert singletonDocID < state.maxDoc;
         }
+
+        DrillSidewaysState dsState = new DrillSidewaysState(state, dsNumDims, dsTermsPerDim, dsField, dsTerms);
+        dsStates.add(dsState);
+
         //System.out.println("    singletonDocID=" + singletonDocID + " liveDocs=" + state.liveDocsBytes + " docFreq=" + docFreq + " docsOnly=" + state.docsOnly);
         totalHits += searchSegmentTermQuery(topDocIDs,
                                             topScores,
@@ -1065,11 +1090,21 @@ public class NativeSearch {
                                             totalTermFreq,
                                             docFreq,
                                             docTermStartFP,
-                                            address);
+                                            address,
+                                            dsNumDims,
+                                            dsState.totalHits,
+                                            dsState.termsPerDim,
+                                            dsState.ddBitsArray,
+                                            dsState.dsBitsArrays,
+                                            dsState.singletonDocIDs,
+                                            dsState.docFreqs,
+                                            dsState.docTermStartFPs,
+                                            dsState.address);
+
       }
     }
 
-    return new SearchResult(buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore));
+    return new SearchResult(buildTopDocs(topDocIDs, topScores, totalHits, topN, constantScore), dsStates);
   }
 
   private static SearchResult _searchPhraseQuery(IndexSearcher searcher, PhraseQuery query, int topN, float constantScore) throws IOException {
