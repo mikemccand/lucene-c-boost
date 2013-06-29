@@ -118,7 +118,19 @@ if True:
 
   run('javac -d build/classes/test -cp %s:dist/luceneCBoost-SNAPSHOT.jar src/test/org/apache/lucene/search/*.java' % toClassPath(DEPS + TEST_DEPS))
 
+def getArg(name, defaultValue):
+  try:
+    idx = sys.argv.index(name)
+  except ValueError:
+    return defaultValue
+  else:
+    s = sys.argv[idx+1]
+    del sys.argv[idx:idx+2]
+    return s
+    
 if True:
+  seed = getArg('-seed', 'random')
+
   print('\nRun tests')
   if not os.path.exists('build/test'):
     os.makedirs('build/test')
@@ -128,7 +140,7 @@ if True:
   command += ' -DtempDir=build/test'
   command += ' -Dtests.codec=Lucene42'
   command += ' -Dtests.directory=NativeMMapDirectory'
-  #command += ' -Dtests.seed=6110DE5D523B3EF7'
+  command += ' -Dtests.seed=%s' % seed
   if len(sys.argv) != 1:
     command += ' -Dtests.method=%s' % sys.argv[1]
   command += ' org.junit.runner.JUnitCore'
