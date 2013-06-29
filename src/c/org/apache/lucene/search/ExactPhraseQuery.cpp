@@ -367,9 +367,11 @@ int phraseQuery(PostingsState* subs,
 
       int posUpto = 0;
 
+      //bool dbg = docIDs[slot] == 46260;
+
       while (true) {
 #ifdef DEBUG
-        printf("  cycle posUpto=%d\n", posUpto);
+        printf("  cycle posUpto=%d countUpto=%d\n", posUpto, countUpto);
 #endif
         if (countUpto + numScorers + 1 < countUpto) {
           // Wrap-around
@@ -387,11 +389,13 @@ int phraseQuery(PostingsState* subs,
         int pos = sub->nextPos;
 
         while (pos < endPos) {
-          int posSlot = pos & POS_MASK;
-          posCounts[posSlot] = countUpto;
+          if (pos >= 0) {
+            int posSlot = pos & POS_MASK;
+            posCounts[posSlot] = countUpto;
 #ifdef DEBUG
-          printf("scorer[0] nextPos=%d\n", pos);
+            printf("scorer[0] nextPos=%d\n", pos);
 #endif
+          }
 
           if (--sub->posLeftInDoc == 0) {
 #ifdef DEBUG
@@ -470,7 +474,7 @@ int phraseQuery(PostingsState* subs,
             int posSlot = pos & POS_MASK;
             if (posCounts[posSlot] == countUpto) {
 #ifdef DEBUG
-              printf("  match pos=%d slot=%d\n", pos, posSlot);fflush(stdout);
+              printf("  match pos=%d slot=%d count=%d\n", pos, posSlot, posCounts[posSlot]);fflush(stdout);
 #endif
               phraseFreq++;
               if (doStopAfterFirstPhrase) {
@@ -559,6 +563,8 @@ int phraseQuery(PostingsState* subs,
             score = sqrt(phraseFreq) * termWeight;
           }
 
+          //printf("    freq=%d\n", phraseFreq);fflush(stdout);
+
           score *= normTable[norms[docIDs[slot]]];
 
           if (score > topScores[1] || (score == topScores[1] && docID < topDocIDs[1])) {
@@ -570,7 +576,6 @@ int phraseQuery(PostingsState* subs,
 #ifdef DEBUG
             printf("    ** score=%g phraseFreq=%d norm=%g\n", score, phraseFreq, normTable[norms[docIDs[slot]]]);fflush(stdout);
 #endif
-
             scoreToBeat = topScores[1];
           }
         }

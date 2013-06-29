@@ -229,8 +229,7 @@ void setLongBit(unsigned long *bits, unsigned int docID);
 //#define DEBUG
 
 #ifndef DEBUG
-// nocommit put back
-//#define printf NO
-//#define fflush NO
+#define printf NO
+#define fflush NO
 #endif
 
