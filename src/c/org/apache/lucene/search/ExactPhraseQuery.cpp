@@ -317,6 +317,8 @@ int phraseQuery(PostingsState* subs,
         
       // Seek/init pos so we are positioned at posDeltas
       // for this document:
+      bool done = false;
+
       unsigned int minTF = 4294967295;
       for(int j=0;j<numScorers;j++) {
         PostingsState *sub = subs+j;
@@ -331,16 +333,36 @@ int phraseQuery(PostingsState* subs,
                sub->posDeltas[sub->posBlockLastRead+1]);
 #endif
         sub->nextPos = posOffsets[j] + sub->posDeltas[sub->posBlockLastRead];
-#ifdef DEBUG
-        printf("    nextPos=%d\n", sub->nextPos);
-#endif
-        if (sub->tfs[slot] < minTF) {
-          minTF = sub->tfs[slot];
-        }
+        int skipped = 0;
         sub->posLeftInDoc = sub->tfs[slot];
+        while (sub->nextPos < 0) {
+          skipped++;
+          if (--sub->posLeftInDoc == 0) {
+            sub->posBlockLastRead++;
+            done = true;
+            break;
+          }
+
+          if (sub->posBlockLastRead == sub->posBlockEnd) {
+            nextPosBlock(sub);
+            sub->posBlockLastRead = -1;
+          }
+          sub->nextPos += sub->posDeltas[++sub->posBlockLastRead];
+        }
+        if (sub->posLeftInDoc < minTF) {
+          minTF = sub->posLeftInDoc;
+        }
 #ifdef DEBUG
         printf("    posLeftInDoc=%d posUpto=%d\n", sub->posLeftInDoc, sub->posUpto);
 #endif
+      }
+
+      if (done) {
+        for(int j=0;j<numScorers;j++) {
+          PostingsState *sub = subs+j;
+          sub->posUpto += sub->tfs[slot] - sub->posLeftInDoc;
+        }
+        continue;
       }
 
       bool doStopAfterFirstPhrase;
@@ -359,7 +381,9 @@ int phraseQuery(PostingsState* subs,
         //}
       }
 
-      bool done = false;
+      // nocommit
+      doStopAfterFirstPhrase = false;
+      doSkipCollect = false;
 
       int phraseFreq = 0;
 
@@ -389,13 +413,11 @@ int phraseQuery(PostingsState* subs,
         int pos = sub->nextPos;
 
         while (pos < endPos) {
-          if (pos >= 0) {
-            int posSlot = pos & POS_MASK;
-            posCounts[posSlot] = countUpto;
+          int posSlot = pos & POS_MASK;
+          posCounts[posSlot] = countUpto;
 #ifdef DEBUG
-            printf("scorer[0] nextPos=%d\n", pos);
+          printf("scorer[0] nextPos=%d\n", pos);
 #endif
-          }
 
           if (--sub->posLeftInDoc == 0) {
 #ifdef DEBUG
@@ -436,11 +458,9 @@ int phraseQuery(PostingsState* subs,
 #ifdef DEBUG
             printf("scorer[%d] nextPos=%d\n", i, pos);
 #endif
-            if (pos >= 0) {
-              int posSlot = pos & POS_MASK;
-              if (posCounts[posSlot] == countUpto) {
-                posCounts[posSlot]++;
-              }
+            int posSlot = pos & POS_MASK;
+            if (posCounts[posSlot] == countUpto) {
+              posCounts[posSlot]++;
             }
             if (--sub->posLeftInDoc == 0) {
               posBlockLastRead++;
@@ -470,20 +490,18 @@ int phraseQuery(PostingsState* subs,
 #ifdef DEBUG
           printf("scorer[%d] nextPos=%d\n", numScorers-1, pos);fflush(stdout);
 #endif
-          if (pos >= 0) {
-            int posSlot = pos & POS_MASK;
-            if (posCounts[posSlot] == countUpto) {
+          int posSlot = pos & POS_MASK;
+          if (posCounts[posSlot] == countUpto) {
 #ifdef DEBUG
-              printf("  match pos=%d slot=%d count=%d\n", pos, posSlot, posCounts[posSlot]);fflush(stdout);
+            printf("  match pos=%d slot=%d count=%d\n", pos, posSlot, posCounts[posSlot]);fflush(stdout);
 #endif
-              phraseFreq++;
-              if (doStopAfterFirstPhrase) {
-                // ConstantScoreQuery(PhraseQuery), so we can
-                // stop & collect hit as soon as we find one
-                // phrase match
-                done = true;
-                break;
-              }
+            phraseFreq++;
+            if (doStopAfterFirstPhrase) {
+              // ConstantScoreQuery(PhraseQuery), so we can
+              // stop & collect hit as soon as we find one
+              // phrase match
+              done = true;
+              break;
             }
           }
 

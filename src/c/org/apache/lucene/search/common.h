@@ -61,7 +61,7 @@ typedef struct {
   unsigned long *tfSums;
   unsigned int *tfs;
   int posLeftInDoc;
-  unsigned int nextPos;
+  int nextPos;
 
   int id;
 } PostingsState;

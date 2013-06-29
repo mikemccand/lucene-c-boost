@@ -118,7 +118,7 @@ if True:
 
   run('javac -d build/classes/test -cp %s:dist/luceneCBoost-SNAPSHOT.jar src/test/org/apache/lucene/search/*.java' % toClassPath(DEPS + TEST_DEPS))
 
-def getArg(name, defaultValue):
+def getArg(name, defaultValue=None):
   try:
     idx = sys.argv.index(name)
   except ValueError:
@@ -129,7 +129,7 @@ def getArg(name, defaultValue):
     return s
     
 if True:
-  seed = getArg('-seed', 'random')
+  seed = getArg('-seed')
 
   print('\nRun tests')
   if not os.path.exists('build/test'):
@@ -140,7 +140,8 @@ if True:
   command += ' -DtempDir=build/test'
   command += ' -Dtests.codec=Lucene42'
   command += ' -Dtests.directory=NativeMMapDirectory'
-  command += ' -Dtests.seed=%s' % seed
+  if seed is not None:
+    command += ' -Dtests.seed=%s' % seed
   if len(sys.argv) != 1:
     command += ' -Dtests.method=%s' % sys.argv[1]
   command += ' org.junit.runner.JUnitCore'

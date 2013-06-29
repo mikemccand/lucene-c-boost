@@ -6,8 +6,6 @@ structural diffs
 DS
   - handle pure DD too
 
-the if (pos >= 0) inside exactPQ can be done outside
-
 handle BQ over DOCS_ONLY?
 
 hmm queries that are expensive to rewrite but then native boost doesn't apply, are slower!!
