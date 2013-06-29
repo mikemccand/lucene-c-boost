@@ -98,13 +98,13 @@ if newer(cSources, nativeSearchLib):
   # -ftree-vectorizer-verbose=3
   # -march=corei7
   print('\nCompile NativeSearch.cpp')
-  run('g++ -g -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (nativeSearchLib, JAVA_HOME, JAVA_HOME, ' '.join(cSources)))
+  run('g++ -g -fPIC -O3 -shared -o %s -I%s/include -I%s/include/linux %s' % (nativeSearchLib, JAVA_HOME, JAVA_HOME, ' '.join(cSources)))
 
 mmapSource = 'src/c/org/apache/lucene/store/NativeMMapDirectory.cpp'
 mmapLib = 'dist/libNativeMMapDirectory.so'
 if newer(mmapSource, mmapLib):
   print('\nCompile NativeMMapDirectory.cpp')
-  run('g++ -g -fPIC -O4 -shared -o %s -I%s/include -I%s/include/linux %s' % (mmapLib, JAVA_HOME, JAVA_HOME, mmapSource))
+  run('g++ -g -fPIC -O3 -shared -o %s -I%s/include -I%s/include/linux %s' % (mmapLib, JAVA_HOME, JAVA_HOME, mmapSource))
 
 if True:
   print('\nCompile java sources')
