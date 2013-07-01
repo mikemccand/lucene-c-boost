@@ -37,17 +37,27 @@ import org.apache.lucene.codecs.lucene40.Lucene40LiveDocsFormat;
 import org.apache.lucene.codecs.lucene41.Lucene41PostingsFormat;
 import org.apache.lucene.codecs.lucene42.Lucene42NormsFormat;
 import org.apache.lucene.codecs.perfield.PerFieldPostingsFormat;
+import org.apache.lucene.facet.params.CategoryListParams.OrdinalPolicy;
+import org.apache.lucene.facet.params.CategoryListParams;
 import org.apache.lucene.facet.params.FacetSearchParams;
 import org.apache.lucene.facet.search.DrillDownQuery;
 import org.apache.lucene.facet.search.DrillSideways.DrillSidewaysResult;
 import org.apache.lucene.facet.search.DrillSideways;
+import org.apache.lucene.facet.search.FacetArrays;
 import org.apache.lucene.facet.search.FacetRequest;
 import org.apache.lucene.facet.search.FacetResult;
 import org.apache.lucene.facet.search.FacetsAccumulator;
+import org.apache.lucene.facet.search.FacetsAggregator;
 import org.apache.lucene.facet.search.FacetsCollector.MatchingDocs;
 import org.apache.lucene.facet.search.FacetsCollector;
+import org.apache.lucene.facet.search.FastCountingFacetsAggregator;
 import org.apache.lucene.facet.search.StandardFacetsAccumulator;
+import org.apache.lucene.facet.search.TopKFacetResultsHandler;
+import org.apache.lucene.facet.taxonomy.ParallelTaxonomyArrays;
+import org.apache.lucene.facet.taxonomy.TaxonomyReader;
+import org.apache.lucene.index.AtomicReader;
 import org.apache.lucene.index.AtomicReaderContext;
+import org.apache.lucene.index.BinaryDocValues;
 import org.apache.lucene.index.DocsAndPositionsEnum;
 import org.apache.lucene.index.DocsEnum;
 import org.apache.lucene.index.FieldInfo;
@@ -272,6 +282,18 @@ public class NativeSearch {
 
       boolean docsOnly);
 
+  private static native void countFacets(
+
+      long[] bits,
+
+      int maxDoc,
+
+      int[] facetCounts,
+
+      long[] dvDocToAddress,
+
+      byte[] dvBytes);
+
   /** Runs the equivalent of DrillSideways.search, using
    *  optimized C++ code when possible, but otherwise
    *  falling back on IndexSearcher. */
@@ -302,8 +324,24 @@ public class NativeSearch {
     }
   }
 
+  private static void getFacetCounts(int[] counts, long[] bits, AtomicReader reader, FacetSearchParams fsp) throws IOException {
+    int maxDoc = reader.maxDoc();
+    // nocommit must verify only one clparams for all FR cat paths:
+    BinaryDocValues bdv = reader.getBinaryDocValues(fsp.indexingParams.getCategoryListParams(null).field);
+    // nocommit must verify this is a Facet42BDV
+    // instance
+    //System.out.println("bits[0]=" + bits[0]);
+    byte[] dvBytes = (byte[]) getFieldObject(bdv, "org.apache.lucene.facet.codecs.facet42.Facet42BinaryDocValues", "bytes");
+    Object o = getFieldObject(bdv, "org.apache.lucene.facet.codecs.facet42.Facet42BinaryDocValues", "addresses");
+    long[] dvAddresses = (long[]) getFieldObject(o, "org.apache.lucene.util.packed.Packed64", "blocks");
+    //System.out.println("BPV=" + getIntField(o, "org.apache.lucene.util.packed.PackedInts$ReaderImpl", "bitsPerValue"));
+    //System.out.println("native dd addresss.len=" + dvAddresses.length + " bytes.len=" + dvBytes.length);
+    countFacets(bits, maxDoc, counts, dvAddresses, dvBytes);
+  }
+
   private static DrillSidewaysResult _drillSidewaysSearch(DrillSideways ds, DrillDownQuery query, int topN, FacetSearchParams fsp) throws IOException {
     IndexSearcher searcher = (IndexSearcher) getFieldObject(ds, "org.apache.lucene.facet.search.DrillSideways", "searcher");
+    TaxonomyReader taxoReader = (TaxonomyReader) getFieldObject(ds, "org.apache.lucene.facet.search.DrillSideways", "taxoReader");
     Method m = getMethod("org.apache.lucene.facet.search.DrillSideways", "moveDrillDownOnlyClauses", DrillDownQuery.class, FacetSearchParams.class);
     query = (DrillDownQuery) invoke(m, ds, query, fsp);
     m = getMethod("org.apache.lucene.facet.search.DrillDownQuery", "getDims");
@@ -413,6 +451,10 @@ public class NativeSearch {
       idx++;
     }
 
+    // C facets is only ~ 16% faster, and is not complete
+    // (need to gen all bitsPerValue for decode):
+    boolean useCFacets = false;
+
     m = getMethod("org.apache.lucene.facet.search.DrillSideways", "getDrillDownAccumulator", FacetSearchParams.class);
     FacetsAccumulator drillDownAccumulator = fsp2 == null ? null : (FacetsAccumulator) invoke(m, ds, fsp2);
     if (drillDownAccumulator != null && (drillDownAccumulator instanceof StandardFacetsAccumulator)) {
@@ -422,6 +464,7 @@ public class NativeSearch {
     List<FacetResult>[] drillSidewaysResults = new List[numDims];
     List<FacetResult> drillDownResults = null;
 
+    long t0 = System.currentTimeMillis();
     List<FacetResult> mergedResults = new ArrayList<FacetResult>();
     int[] requestUpto = new int[drillDownDims.size()];
     int ddUpto = 0;
@@ -435,11 +478,45 @@ public class NativeSearch {
         if (drillDownResults == null) {
           // Lazy init, in case all requests were against
           // drill-sideways dims:
-          List<MatchingDocs> matchingDocs = new ArrayList<MatchingDocs>();
-          for(DrillSidewaysState dsState : rawResult.dsRawResults) {
-            matchingDocs.add(new MatchingDocs(dsState.ctx, dsState.ddBits, dsState.totalHits[0], null));
+
+          if (useCFacets) {
+            // nocommit must verify all criteria that
+            // FastCountingFAcetsCollector verifies
+
+            FacetArrays arr = new FacetArrays(taxoReader.getSize());
+            int[] counts = arr.getIntArray();
+            for(DrillSidewaysState dsState : rawResult.dsRawResults) {
+              getFacetCounts(counts, dsState.ddBitsArray, dsState.ctx.reader(), fsp2);
+            }
+
+            ParallelTaxonomyArrays arrays = taxoReader.getParallelTaxonomyArrays();
+            final int[] children = arrays.children();
+            final int[] siblings = arrays.siblings();
+
+            FacetsAggregator agg = new FastCountingFacetsAggregator();
+
+            drillDownResults = new ArrayList<FacetResult>();
+            for(FacetRequest fr2 : fsp2.facetRequests) {
+              int rootOrd = taxoReader.getOrdinal(fr2.categoryPath);
+              CategoryListParams clp = fsp2.indexingParams.getCategoryListParams(fr2.categoryPath);
+              if (fr2.categoryPath.length > 0) { // someone might ask to aggregate the ROOT category
+                OrdinalPolicy ordinalPolicy = clp.getOrdinalPolicy(fr2.categoryPath.components[0]);
+                if (ordinalPolicy == OrdinalPolicy.NO_PARENTS) {
+                  // rollup values
+                  //System.out.println("dd rollup");
+                  agg.rollupValues(fr2, rootOrd, children, siblings, arr);
+                }
+              }
+
+              drillDownResults.add(new TopKFacetResultsHandler(taxoReader, fr2, arr).compute());
+            }
+          } else {
+            List<MatchingDocs> matchingDocs = new ArrayList<MatchingDocs>();
+            for(DrillSidewaysState dsState : rawResult.dsRawResults) {
+              matchingDocs.add(new MatchingDocs(dsState.ctx, dsState.ddBits, dsState.totalHits[0], null));
+            }
+            drillDownResults = drillDownAccumulator.accumulate(matchingDocs);
           }
-          drillDownResults = drillDownAccumulator.accumulate(matchingDocs);
         }
         mergedResults.add(drillDownResults.get(ddUpto++));
       } else {
@@ -447,19 +524,55 @@ public class NativeSearch {
         int dim = dimIndex.intValue();
         List<FacetResult> sidewaysResult = drillSidewaysResults[dim];
         if (sidewaysResult == null) {
-          // Lazy init, in case no facet request is against
-          // a given drill down dim:
-          List<MatchingDocs> matchingDocs = new ArrayList<MatchingDocs>();
-          for(DrillSidewaysState dsState : rawResult.dsRawResults) {
-            matchingDocs.add(new MatchingDocs(dsState.ctx, dsState.dsBits[dim], dsState.totalHits[1+dim], null));
+          if (useCFacets) {
+            // Lazy init, in case no facet request is against
+            // a given drill down dim:
+
+            // nocommit must verify all criteria that
+            // FastCountingFAcetsCollector verifies
+
+            FacetArrays arr = new FacetArrays(taxoReader.getSize());
+            int[] counts = arr.getIntArray();
+            for(DrillSidewaysState dsState : rawResult.dsRawResults) {
+              getFacetCounts(counts, dsState.dsBitsArrays[dim], dsState.ctx.reader(), fsp);
+            }
+
+            ParallelTaxonomyArrays arrays = taxoReader.getParallelTaxonomyArrays();
+            final int[] children = arrays.children();
+            final int[] siblings = arrays.siblings();
+
+            FacetsAggregator agg = new FastCountingFacetsAggregator();
+
+            drillSidewaysResults[dim] = sidewaysResult = new ArrayList<FacetResult>();
+            for(FacetRequest fr2 : drillSidewaysAccumulators[dim].searchParams.facetRequests) {
+              int rootOrd = taxoReader.getOrdinal(fr.categoryPath);
+              CategoryListParams clp = fsp2.indexingParams.getCategoryListParams(fr.categoryPath);
+              if (fr.categoryPath.length > 0) { // someone might ask to aggregate the ROOT category
+                OrdinalPolicy ordinalPolicy = clp.getOrdinalPolicy(fr.categoryPath.components[0]);
+                if (ordinalPolicy == OrdinalPolicy.NO_PARENTS) {
+                  // rollup values
+                  //System.out.println("ds rollup");
+                  agg.rollupValues(fr, rootOrd, children, siblings, arr);
+                }
+              }
+
+              sidewaysResult.add(new TopKFacetResultsHandler(taxoReader, fr2, arr).compute());
+            }
+          } else {
+            List<MatchingDocs> matchingDocs = new ArrayList<MatchingDocs>();
+            for(DrillSidewaysState dsState : rawResult.dsRawResults) {
+              matchingDocs.add(new MatchingDocs(dsState.ctx, dsState.dsBits[dim], dsState.totalHits[1+dim], null));
+            }
+            sidewaysResult = drillSidewaysAccumulators[dim].accumulate(matchingDocs);
+            drillSidewaysResults[dim] = sidewaysResult;
           }
-          sidewaysResult = drillSidewaysAccumulators[dim].accumulate(matchingDocs);
-          drillSidewaysResults[dim] = sidewaysResult;
         }
         mergedResults.add(sidewaysResult.get(requestUpto[dim]));
         requestUpto[dim]++;
       }
     }
+    long t1 = System.currentTimeMillis();
+    //System.out.println("facets: " + (t1-t0) + " msec");
 
     Constructor c = getConstructor("org.apache.lucene.facet.search.DrillSideways$DrillSidewaysResult",
                                    List.class,  TopDocs.class);

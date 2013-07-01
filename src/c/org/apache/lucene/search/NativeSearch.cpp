@@ -1805,3 +1805,77 @@ Java_org_apache_lucene_search_NativeSearch_searchSegmentExactPhraseQuery
   }
   return hitCount;
 }
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_apache_lucene_search_NativeSearch_countFacets
+  (JNIEnv *env,
+   jclass cl,
+
+   jlongArray jbits,
+
+   jint maxDoc,
+
+   jintArray jfacetCounts,
+
+   jlongArray jdvDocToAddress,
+
+   jbyteArray jdvFacetBytes)
+
+{
+  //printf("do natvie search\n");fflush(stdout);
+  unsigned long *bits = 0;
+  unsigned int *facetCounts = 0;
+  unsigned long *dvDocToAddress = 0;
+  unsigned char *dvFacetBytes = 0;
+  unsigned char isCopy = 0;
+  bool failed = false;
+
+  bits = (unsigned long *) env->GetPrimitiveArrayCritical(jbits, &isCopy);
+  if (bits == 0) {
+    failed = true;
+    goto end;
+  }
+
+  facetCounts = (unsigned int *) env->GetPrimitiveArrayCritical(jfacetCounts, &isCopy);
+  if (facetCounts == 0) {
+    failed = true;
+    goto end;
+  }
+
+  dvDocToAddress = (unsigned long *) env->GetPrimitiveArrayCritical(jdvDocToAddress, &isCopy);
+  if (dvDocToAddress == 0) {
+    failed = true;
+    goto end;
+  }
+
+  dvFacetBytes = (unsigned char *) env->GetPrimitiveArrayCritical(jdvFacetBytes, &isCopy);
+  if (dvFacetBytes == 0) {
+    failed = true;
+    goto end;
+  }
+
+  countFacets(bits, maxDoc, facetCounts, dvDocToAddress, dvFacetBytes);
+
+ end:
+
+  if (bits != 0) {
+    env->ReleasePrimitiveArrayCritical(jbits, bits, JNI_ABORT);
+  }
+  if (facetCounts != 0) {
+    env->ReleasePrimitiveArrayCritical(jfacetCounts, facetCounts, 0);
+  }
+  if (dvDocToAddress != 0) {
+    env->ReleasePrimitiveArrayCritical(jdvDocToAddress, dvDocToAddress, 0);
+  }
+  if (dvFacetBytes != 0) {
+    env->ReleasePrimitiveArrayCritical(jdvFacetBytes, dvFacetBytes, 0);
+  }
+  
+  if (failed) {
+    jclass c = env->FindClass("java/lang/OutOfMemoryError");
+    env->ThrowNew(c, "failed to allocate temporary memory");
+    return -1;
+  }
+
+  return 0;
+}

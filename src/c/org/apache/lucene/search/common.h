@@ -226,10 +226,16 @@ unsigned int drillSidewaysCollect(unsigned int topN,
 bool isSet(unsigned char *bits, unsigned int docID);
 void setLongBit(unsigned long *bits, unsigned int docID);
 
+// FixedBitSet.nextSetBit:
+int nextSetBit(unsigned long *bits, int index);
+
+void countFacets(unsigned long *bits, unsigned int maxDoc, unsigned int *facetCounts, unsigned long *docToAddress, unsigned char *facetBytes);
+
 //#define DEBUG
 
 #ifndef DEBUG
-#define printf NO
-#define fflush NO
+// nocommit put back
+//#define printf NO
+//#define fflush NO
 #endif
 

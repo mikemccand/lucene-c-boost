@@ -2540,3 +2540,4 @@ void setLongBit(unsigned long *bits, unsigned int index) {
   long bitmask = 1L << bit;
   bits[wordNum] |= bitmask;
 }
+

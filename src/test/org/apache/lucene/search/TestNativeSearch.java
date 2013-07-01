@@ -24,6 +24,8 @@ import java.util.List;
 
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.codecs.Codec;
+import org.apache.lucene.codecs.DocValuesFormat;
+import org.apache.lucene.codecs.lucene42.Lucene42Codec;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.FieldType;
@@ -31,6 +33,7 @@ import org.apache.lucene.document.IntField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.facet.index.FacetFields;
+import org.apache.lucene.facet.params.CategoryListParams;
 import org.apache.lucene.facet.params.FacetSearchParams;
 import org.apache.lucene.facet.search.CountFacetRequest;
 import org.apache.lucene.facet.search.DrillDownQuery;
@@ -985,7 +988,20 @@ public class TestNativeSearch extends LuceneTestCase {
     File tmpDir = _TestUtil.getTempDir("nativesearch");
     Directory dir = new NativeMMapDirectory(tmpDir);
     IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
-    iwc.setCodec(Codec.forName("Lucene42"));
+    final Codec codec = new Lucene42Codec() {
+        private final DocValuesFormat facetsDVFormat = DocValuesFormat.forName("Facet42");
+        private final DocValuesFormat lucene42DVFormat = DocValuesFormat.forName("Lucene42");
+
+        @Override
+        public DocValuesFormat getDocValuesFormatForField(String field) {
+          if (field.equals(CategoryListParams.DEFAULT_FIELD)) {
+            return facetsDVFormat;
+          } else {
+            return lucene42DVFormat;
+          }
+        }
+      };
+    iwc.setCodec(codec);
     IndexWriter w = new IndexWriter(dir, iwc);
 
     Directory taxoDir = newDirectory();

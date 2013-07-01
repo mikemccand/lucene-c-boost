@@ -17,7 +17,7 @@
 
 import StringIO
 
-"""Code generation for bulk operations"""
+"""Code generation for bulk operations (for postings decode)"""
 
 MAX_SPECIALIZED_BITS_PER_VALUE = 24;
 PACKED_64_SINGLE_BLOCK_BPV = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 21, 32]

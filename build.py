@@ -77,13 +77,14 @@ JAVA_HOME = os.environ['JAVA_HOME']
 
 if not os.path.exists('dist'):
   os.makedirs('dist')
-genPacked = 'src/c/org/apache/lucene/search/gen_Packed.py'
+genBulkPacked = 'src/c/org/apache/lucene/search/gen_BulkPacked.py'
 common = 'src/c/org/apache/lucene/search/common.cpp'
-if newer(genPacked, common):
+if newer(genBulkPacked, common):
   print('\nGenerated packed decode functions')
-  run('%s %s' % (sys.executable, genPacked))
+  run('%s %s' % (sys.executable, genBulkPacked))
 
 cSources = [common,
+            'src/c/org/apache/lucene/search/facets.cpp',
             'src/c/org/apache/lucene/search/NativeSearch.cpp',
             'src/c/org/apache/lucene/search/BooleanQueryOnlyShould.cpp',
             'src/c/org/apache/lucene/search/DrillSideways.cpp',

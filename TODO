@@ -6,6 +6,9 @@ structural diffs
 DS
   - handle pure DD too
 
+FACETS
+  - I can put a "stop bit" at the end of the DD/DS bits, and save an inner if?
+
 handle BQ over DOCS_ONLY?
 
 hmm queries that are expensive to rewrite but then native boost doesn't apply, are slower!!  do more up-front checks?
